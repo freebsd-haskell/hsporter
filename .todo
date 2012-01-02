@@ -1,0 +1,7 @@
+- Improve documentation
+- Refactor
+- Support for lhs2TeX
+- When no exposed modules -> no register script (STANDALONE=yes)
+- Create a diff for injecting a port into bsd.hackage.mk
+- Support for PORTDATA
+- Support for OPTIONS
