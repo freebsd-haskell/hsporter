@@ -165,7 +165,7 @@ cabalSetup ix
 
 useHackage :: [(String,String)] -> [String]
 useHackage []  = []
-useHackage dps = ["", "USE_HACKAGE=\t" ++ (unwords $ map cnv dps)]
+useHackage dps = ["", "USE_CABAL=\t" ++ (unwords $ map cnv dps)]
   where
     cnv (n,"")  = n
     cnv (n,v)   = n ++ v
