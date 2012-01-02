@@ -84,7 +84,7 @@ tarballIndex tgz = foldEntries translate [] (\_ -> []) entries
     entries = (Tar.read . GZip.decompress) tgz
 
 www :: String -> String
-www url = "WWW: " ++ url
+www url = "WWW:\t" ++ url
 
 maintainer :: String -> String
 maintainer m = "MAINTAINER=\t" ++ m
