@@ -22,6 +22,10 @@ module Main where
 import Codec.Archive.Tar as Tar
 import Codec.Compression.GZip as GZip
 import qualified Data.ByteString.Lazy as BS
+import Control.Applicative
+import Control.Arrow
+import Control.Monad (when)
+import Data.Char
 import Data.Digest.Pure.SHA
 import Data.List
 import Data.Maybe
@@ -38,7 +42,7 @@ import System.Environment
 import System.IO
 import System.Time
 import System.Exit (exitSuccess)
-import Control.Monad (when)
+import Text.ParserCombinators.ReadP
 
 hackageUrl, makefile, distinfo, pkgDescr :: String
 [hackageUrl,makefile,distinfo,pkgDescr] =
@@ -105,36 +109,30 @@ categories c = "CATEGORIES=\t" ++ cats
 prefix :: String
 prefix = "hs-"
 
--- GHC 7.0.2
-baseLibs :: [(String, [Int])]
-baseLibs =
-  [ ("Cabal", [1,10,1,0])
-  , ("array", [0,3,0,2])
-  , ("base", [4,3,1,0])
-  , ("bytestring", [0,9,1,10])
-  , ("containers", [0,4,0,0])
-  , ("directory", [1,1,0,0])
-  , ("extensible-exceptions", [0,1,1,2])
-  , ("filepath", [1,2,0,0])
-  , ("ghc", [7,0,2])
-  , ("ghc-binary", [0,5,0,2])
-  , ("ghc-prim", [0,2,0,0])
-  , ("haskell2010", [1,0,0,0])
-  , ("haskell98", [1,1,0,0])
-  , ("hpc", [0,5,0,6])
-  , ("integer-gmp", [0,2,0,3])
-  , ("old-locale", [1,0,0,2])
-  , ("old-time", [1,0,0,6])
-  , ("pretty", [1,0,1,2])
-  , ("process", [1,0,1,5])
-  , ("random", [1,0,0,3])
-  , ("template-haskell", [2,5,0,0])
-  , ("time", [1,2,0,3])
-  , ("unix", [2,4,2,0])
-  ]
+normalize :: [String] -> [String]
+normalize = filter nonEmpty . map (trim . uncomment)
+  where
+    nonEmpty = not . null
+    uncomment = takeWhile (/= '#')
+    trim = f . f
+      where f = reverse . dropWhile isSpace
 
-dependencies :: GenericPackageDescription -> [(String,String)]
-dependencies gpkgd
+getBaseLibs :: IO [(String,[Int])]
+getBaseLibs = do
+  contents <- lines <$> readFile "core.conf"
+  return $ sort $ translate <$> normalize contents
+  where
+    translate = name &&& version
+      where
+        name = takeWhile (not . isSpace)
+        version =
+          versionBranch . fst . last .
+          (readP_to_S parseVersion) .
+          dropWhile isSpace .
+          dropWhile (not . isSpace)
+
+dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
+dependencies baseLibs gpkgd
   = sort $ map (\(p,(op,v)) -> (p, op ++ showVersion v)) $ filter (not . baselib) alldeps
   where
     alldeps = map convert $ condTreeConstraints $ source
@@ -189,8 +187,8 @@ executable :: [String] -> [String]
 executable []   = []
 executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
 
-makefileOf :: GenericPackageDescription -> String -> CalendarTime -> [String] -> String
-makefileOf gpkgd category timestamp tgzidx
+makefileOf :: [(String,[Int])] -> GenericPackageDescription -> String -> CalendarTime -> [String] -> String
+makefileOf baseLibs gpkgd category timestamp tgzidx
   = unlines $
     [ "# New ports collection makefile for: " ++ fullNameOf pkgd
     , "# Date created:        " ++ fmt timestamp
@@ -207,7 +205,7 @@ makefileOf gpkgd category timestamp tgzidx
     , comment $ synopsisOf pkgd
     ] ++
     (cabalSetup tgzidx) ++
-    (useHackage $ dependencies gpkgd) ++
+    (useHackage $ dependencies baseLibs gpkgd) ++
     (useAlex $ buildtools gpkgd) ++
     (useHappy $ buildtools gpkgd) ++
     (executable $ binaries gpkgd) ++
@@ -271,6 +269,7 @@ main = do
   when (length args /= 2) printUsage
   url <- return $ args !! 0
   category <- return $ args !! 1
+  baseLibs <- getBaseLibs
   putStrLn $ "Fetching " ++ url ++ "..."
   cabal <- getDescription url
   ParseOk _ gpkg <- return $ parsePackageDescription cabal
@@ -286,7 +285,7 @@ main = do
   let fileOf f = dir ++ "/" ++ f
   now <- getClockTime
   stamp <- toCalendarTime now
-  writeFile (fileOf makefile) (makefileOf gpkg category stamp tgzidx)
+  writeFile (fileOf makefile) (makefileOf baseLibs gpkg category stamp tgzidx)
   putStr $ sep makefile
   writeFile (fileOf distinfo) (distinfoOf pkg tarball)
   putStr $ sep distinfo
