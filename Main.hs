@@ -40,17 +40,13 @@ import System.Time
 import System.Exit (exitSuccess)
 import Control.Monad (when)
 
-hackageUrl :: String
-hackageUrl ="http://hackage.haskell.org/packages/archive/"
-
-makefile :: String
-makefile = "Makefile"
-
-distinfo :: String
-distinfo = "distinfo"
-
-pkgDescr :: String
-pkgDescr = "pkg-descr"
+hackageUrl, makefile, distinfo, pkgDescr :: String
+[hackageUrl,makefile,distinfo,pkgDescr] =
+  [ "http://hackage.haskell.org/packages/archive/"
+  , "Makefile"
+  , "distinfo"
+  , "pkg-descr"
+  ]
 
 fullNameOf :: PackageDescription -> String
 fullNameOf pkgd = prefix ++ nameOf pkgd
