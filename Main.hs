@@ -1,10 +1,10 @@
 ------------------------------------------------------------------------------
 -- |
 -- Module      : hsporter: convert cabal packages to FreeBSD ports
--- Copyright   : (c) Gabor Pali, 2010-2011
+-- Copyright   : (c) Gabor Pali, 2010-2012
 -- License     : BSD3
 --
--- Maintainer  : FreeBSD Haskell <freebsd-haskell@haskell.org>
+-- Maintainer  : FreeBSD Haskell <haskell@FreeBSD.org>
 -- Stability   : experimental
 -- Portability : non-portable
 --
