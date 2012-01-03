@@ -21,7 +21,7 @@ module Main where
 
 import Codec.Archive.Tar as Tar
 import Codec.Compression.GZip as GZip
-import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Lazy.Char8 as BS
 import Control.Applicative
 import Control.Arrow
 import Control.Monad (when)
@@ -33,6 +33,7 @@ import qualified Data.Map as DM
 import Data.Maybe
 import qualified Data.Text as DT
 import Data.Version
+import Distribution.License
 import Distribution.ModuleName hiding (main)
 import Distribution.Package
 import Distribution.PackageDescription hiding (maintainer, category, license)
@@ -43,6 +44,7 @@ import Network.HTTP
 import Network.URI
 import System.Directory hiding (executable)
 import System.Environment
+import System.FilePath.Posix
 import System.IO
 import System.Time
 import System.Exit (exitSuccess)
@@ -85,11 +87,28 @@ tarballOf pkgd withUrl
         then hackageUrl ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
         else ""
 
+tgzEntries :: BS.ByteString -> Entries
+tgzEntries = Tar.read . GZip.decompress
+
 tarballIndex :: BS.ByteString -> [String]
 tarballIndex tgz = foldEntries translate [] (\_ -> []) entries
   where
     translate entry ls = (entryPath entry):ls
-    entries = (Tar.read . GZip.decompress) tgz
+    entries = tgzEntries tgz
+
+licenseText :: BS.ByteString -> FilePath -> String
+licenseText tgz name
+  | not . null $ files = BS.unpack $ head files
+  | otherwise = ""
+  where
+    entries = tgzEntries tgz
+    files   = foldEntries find [] (const []) entries
+    find x ls  =
+      if ((takeBaseName $ entryPath x) == name)
+        then cts:ls
+        else ls
+          where
+            NormalFile cts _ = entryContent x
 
 www :: String -> String
 www url = "WWW:\t" ++ url
@@ -109,6 +128,35 @@ portversion v = "PORTVERSION=\t" ++ v
 categories :: String -> String
 categories c = "CATEGORIES=\t" ++ cats
   where cats = foldl1 (++) $ intersperse " " $ [c] ++ ["haskell"]
+
+findLicense :: License -> Maybe String
+findLicense (GPL _)  = Just "GPLv"
+findLicense (LGPL _) = Just "LGPL21"
+findLicense BSD3     = Just "BSD"
+findLicense BSD4     = Just "BSD"
+findLicense MIT      = Just "MIT"
+findLicense _        = Nothing
+
+findGPLVersion :: String -> String
+findGPLVersion =
+  DT.unpack .
+  DT.take 1 . (!! 1) .
+  DT.words .
+  snd . DT.breakOn (DT.toUpper $ DT.pack "Version ") .
+  DT.toUpper . DT.pack
+
+license :: (License,FilePath) -> String -> [String]
+license (l,lf) lictxt =
+  case (findLicense l) of
+    Just lic@"GPLv" -> renderLicense (lic ++ findGPLVersion lictxt)
+    Just lic -> renderLicense lic
+    Nothing  -> []
+  where
+    renderLicense l =
+      ["LICENSE=\t" ++ l] ++ setFile lf
+      where
+        setFile "LICENSE" = []
+        setFile other     = ["FILE_LICENSE=\t" ++ other]
 
 prefix :: String
 prefix = "hs-"
@@ -209,8 +257,8 @@ executable :: [String] -> [String]
 executable []   = []
 executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
 
-makefileOf :: [(String,[Int])] -> GenericPackageDescription -> String -> CalendarTime -> [String] -> String
-makefileOf baseLibs gpkgd category timestamp tgzidx
+makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> CalendarTime -> [String] -> String
+makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
   = unlines $
     [ "# New ports collection makefile for: " ++ fullNameOf pkgd
     , "# Date created:        " ++ fmt timestamp
@@ -225,7 +273,9 @@ makefileOf baseLibs gpkgd category timestamp tgzidx
     , ""
     , maintainer "haskell@FreeBSD.org"
     , comment $ synopsisOf pkgd
+    , ""
     ] ++
+    (license (licensingOf pkgd) lictxt) ++
     (cabalSetup tgzidx) ++
     (useHackage $ dependencies baseLibs gpkgd) ++
     (useAlex $ buildtools gpkgd) ++
@@ -280,6 +330,9 @@ versionOf pkgd = verstr
 synopsisOf :: PackageDescription -> String
 synopsisOf pkgd = synopsis pkgd
 
+licensingOf :: PackageDescription -> (License,FilePath)
+licensingOf = DP.license &&& DP.licenseFile
+
 printUsage :: IO ()
 printUsage = do
   putStrLn "Usage: hsporter <URL to the .cabal>"
@@ -301,6 +354,7 @@ main = do
   putStrLn $ "Fetching " ++ tgzUrl ++ "..."
   tarball <- getTarball tgzUrl
   tgzidx <- return $ tarballIndex tarball
+  lic <- return $ licenseText tarball (DP.licenseFile pkg)
   let dir = category ++ "/" ++ (fullNameOf pkg)
   putStrLn $ "Creating directory " ++ dir ++ "..."
   createDirectoryIfMissing True dir
@@ -308,7 +362,7 @@ main = do
   let fileOf f = dir ++ "/" ++ f
   now <- getClockTime
   stamp <- toCalendarTime now
-  writeFile (fileOf makefile) (makefileOf baseLibs gpkg category stamp tgzidx)
+  writeFile (fileOf makefile) (makefileOf baseLibs lic gpkg category stamp tgzidx)
   putStr $ sep makefile
   writeFile (fileOf distinfo) (distinfoOf pkg tarball)
   putStr $ sep distinfo
