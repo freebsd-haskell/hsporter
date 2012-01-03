@@ -23,6 +23,7 @@ executable hsporter
     build-depends:
         base >= 4,
         bytestring,
+        containers,
         directory,
         filepath,
         old-time,
@@ -31,4 +32,5 @@ executable hsporter
         SHA,
         Cabal,
         HTTP,
-        network
+        network,
+        text

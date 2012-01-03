@@ -27,12 +27,16 @@ import Control.Arrow
 import Control.Monad (when)
 import Data.Char
 import Data.Digest.Pure.SHA
+import Data.Function
 import Data.List
+import qualified Data.Map as DM
 import Data.Maybe
+import qualified Data.Text as DT
 import Data.Version
 import Distribution.ModuleName hiding (main)
 import Distribution.Package
 import Distribution.PackageDescription hiding (maintainer, category, license)
+import qualified Distribution.PackageDescription as DP
 import Distribution.PackageDescription.Parse
 import Distribution.Version
 import Network.HTTP
@@ -130,6 +134,24 @@ getBaseLibs = do
           (readP_to_S parseVersion) .
           dropWhile isSpace .
           dropWhile (not . isSpace)
+
+splitBy b = map (DT.unpack . DT.strip) . DT.split b . DT.pack
+
+getCategoryMap :: IO [(String,String)]
+getCategoryMap = do
+  contents <- (normalize . lines) <$> readFile "categories.conf"
+  return $ translate <$> contents
+  where
+    translate str = (a,b)
+      where a:b:_ = splitBy (== ':') str
+
+findCategory :: DM.Map String String -> String -> String
+findCategory cmap c =
+  snd $ maximumBy (compare `on` fst) $ distrib $ find <$> cats
+  where
+    cats = splitBy (== ',') c
+    find x = DM.findWithDefault "misc" x cmap
+    distrib = map (length &&& head) . group . sort
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
 dependencies baseLibs gpkgd
@@ -260,20 +282,21 @@ synopsisOf pkgd = synopsis pkgd
 
 printUsage :: IO ()
 printUsage = do
-  putStrLn "Usage: hsporter <URL to the .cabal> <category>"
+  putStrLn "Usage: hsporter <URL to the .cabal>"
   exitSuccess
 
 main :: IO ()
 main = do
   args <- getArgs
-  when (length args /= 2) printUsage
-  url <- return $ args !! 0
-  category <- return $ args !! 1
+  when (length args /= 1) printUsage
+  url <- return $ head args
   baseLibs <- getBaseLibs
+  catMap <- DM.fromList <$> getCategoryMap
   putStrLn $ "Fetching " ++ url ++ "..."
   cabal <- getDescription url
   ParseOk _ gpkg <- return $ parsePackageDescription cabal
   let pkg = packageDescription gpkg
+  let category = findCategory catMap (DP.category pkg)
   let tgzUrl = tarballOf pkg True
   putStrLn $ "Fetching " ++ tgzUrl ++ "..."
   tarball <- getTarball tgzUrl

@@ -9,17 +9,16 @@ INSTALLATION:
 
 USAGE:
   Synopsis:
-    hsporter cabal_description_url port_category
+    hsporter cabal_description_url
 
     where
       cabal_description_url = valid URL of a Cabal package (probably on
         HackageDB)
-      port_category = a valid FreeBSD ports category
 
   Example:
     Issue the following command.
 
-      hsporter http://hackage.haskell.org/packages/archive/DeepArrow/0.3.3/DeepArrow.cabal devel
+      hsporter http://hackage.haskell.org/packages/archive/DeepArrow/0.3.3/DeepArrow.cabal
 
     It will create all the files needed for a port inside the directory
     "devel/hs-DeepArrow".
