@@ -202,11 +202,13 @@ findCategory cmap c =
     distrib = map (length &&& head) . group . sort
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
-dependencies baseLibs gpkgd
-  = sort $ map (\(p,(op,v)) -> (p, op ++ showVersion v)) $ filter (not . baselib) alldeps
+dependencies baseLibs =
+  sortBy (compare `on` (map toUpper . fst)) .
+  map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
+  filter (not . baselib) .
+  map convert . condTreeConstraints .
+  fromJust . condLibrary
   where
-    alldeps = map convert $ condTreeConstraints $ source
-    source  = fromJust $ condLibrary gpkgd
     convert (Dependency (PackageName p) vr) = (p, versionReq vr)
 
     baselib (p,(o,v)) = any (\(bp,bv) -> bp == p && (op o) bv vb) baseLibs
