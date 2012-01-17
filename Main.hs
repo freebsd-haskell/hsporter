@@ -50,6 +50,9 @@ import System.Time
 import System.Exit (exitSuccess)
 import Text.ParserCombinators.ReadP
 
+withText :: (DT.Text -> DT.Text) -> (String -> String)
+withText f = DT.unpack . f . DT.pack
+
 hackageUrl, makefile, distinfo, pkgDescr :: String
 [hackageUrl,makefile,distinfo,pkgDescr] =
   [ "http://hackage.haskell.org/packages/archive/"
@@ -117,7 +120,9 @@ maintainer :: String -> String
 maintainer m = "MAINTAINER=\t" ++ m
 
 comment :: String -> String
-comment c = "COMMENT=\t" ++ c
+comment = withText $
+  DT.append (DT.pack "COMMENT=\t") .
+  DT.dropWhileEnd (== '.')
 
 portname :: String -> String
 portname n = "PORTNAME=\t" ++ n
