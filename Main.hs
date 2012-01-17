@@ -53,6 +53,29 @@ import Text.ParserCombinators.ReadP
 withText :: (DT.Text -> DT.Text) -> (String -> String)
 withText f = DT.unpack . f . DT.pack
 
+format :: Int -> Maybe Char -> [String] -> [String]
+format w t =
+  map (DT.unpack . (flip DT.append term) . stuff) .
+  cutter . map DT.pack
+  where
+    cutter [] = []
+    cutter ws = i : cutter (drop (length i) ws)
+      where i = ideal ws
+
+    thread []     = DT.pack ""
+    thread [w]    = w
+    thread (w:ws) = DT.append (DT.append w term) (thread ws)
+
+    (width,term) =
+      case t of
+        Just x  -> (w - 2, DT.pack (' ':x:[]))
+        Nothing -> (w, DT.pack "")
+
+    ideal     = minimumBy (compare `on` (dist width . estimate)) . inits
+    estimate  = DT.length . stuff
+    stuff     = DT.intercalate (DT.pack " ")
+    dist x y  = abs (x - y)
+
 hackageUrl, makefile, distinfo, pkgDescr :: String
 [hackageUrl,makefile,distinfo,pkgDescr] =
   [ "http://hackage.haskell.org/packages/archive/"
@@ -242,8 +265,12 @@ cabalSetup ix
 
 useHackage :: [(String,String)] -> [String]
 useHackage []  = []
-useHackage dps = ["", "USE_CABAL=\t" ++ (unwords $ map cnv dps)]
+useHackage dps =
+  ["", prologue ++ head packs] ++ map ("\t\t" ++) (tail packs)
   where
+    prologue = "USE_CABAL=\t"
+    packs    = format 56 (Just '\\') $ map cnv dps
+
     cnv (n,"")  = n
     cnv (n,v)   = n ++ v
 
@@ -315,7 +342,7 @@ distinfoOf pkgd tgz
 
 pkgDescrOf :: PackageDescription -> String
 pkgDescrOf pkgd
-  = unlines $ lines (description pkgd) ++ ["", www url]
+  = unlines $ (format 72 Nothing . words . description $ pkgd) ++ ["", www url]
     where
       PackageName pn = (pkgName . package) pkgd
       hp = homepage pkgd
