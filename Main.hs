@@ -231,8 +231,8 @@ dependencies baseLibs =
   sortBy (compare `on` (map toUpper . fst)) .
   map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
   filter (not . baselib) .
-  map convert . condTreeConstraints .
-  fromJust . condLibrary
+  map convert .
+  collectDeps
   where
     convert (Dependency (PackageName p) vr) = (p, versionReq vr)
 
@@ -243,6 +243,15 @@ dependencies baseLibs =
         op ">=" = (>=)
         op ">"  = (>)
         op _    = (\_ _ -> True)
+
+    collectDeps gpkgd = concat [libdeps,exedeps,testdeps]
+      where
+        libdeps   =
+          case (condLibrary gpkgd) of
+            Just x  -> condTreeConstraints x
+            Nothing -> []
+        exedeps   = concatMap (condTreeConstraints . snd) . condExecutables $ gpkgd
+        testdeps  = concatMap (condTreeConstraints . snd) . condTestSuites  $ gpkgd
 
 binaries :: GenericPackageDescription -> [String]
 binaries gpkgd = sort $ map fst (condExecutables gpkgd)
