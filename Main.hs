@@ -333,8 +333,19 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
       (show $ ctDay ts) ++ ", " ++
       (show $ ctYear ts)
 
-    buildtools
-      = buildTools . libBuildInfo . condTreeData . fromJust .  condLibrary
+    buildtools gpkgd =
+      concatMap buildTools $ concat [libTools,exeTools,testTools]
+      where
+        libTools  =
+          case (condLibrary gpkgd) of
+            Just x  -> [libBuildInfo $ condTreeData x]
+            Nothing -> []
+
+        exeTools  =
+          map (buildInfo . condTreeData . snd) . condExecutables $ gpkgd
+
+        testTools =
+          map (testBuildInfo . condTreeData . snd) . condTestSuites  $ gpkgd
 
 
 distinfoOf :: PackageDescription -> BS.ByteString -> String
