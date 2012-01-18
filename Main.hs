@@ -55,16 +55,13 @@ withText f = DT.unpack . f . DT.pack
 
 format :: Int -> Maybe Char -> [String] -> [String]
 format w t =
-  map (DT.unpack . (flip DT.append term) . stuff) .
-  cutter . map DT.pack
+  map DT.unpack . reverse . uncurry (:) .
+  (head &&& (map (flip DT.append term) . tail)) .
+  reverse .  map stuff . cut . map DT.pack
   where
-    cutter [] = []
-    cutter ws = i : cutter (drop (length i) ws)
+    cut [] = []
+    cut ws = i : cut (drop (length i) ws)
       where i = ideal ws
-
-    thread []     = DT.pack ""
-    thread [w]    = w
-    thread (w:ws) = DT.append (DT.append w term) (thread ws)
 
     (width,term) =
       case t of
