@@ -256,6 +256,11 @@ dependencies baseLibs =
 binaries :: GenericPackageDescription -> [String]
 binaries gpkgd = sort $ map fst (condExecutables gpkgd)
 
+standalone :: GenericPackageDescription -> [String]
+standalone gpkgd
+  | isNothing (condLibrary gpkgd) = ["", "STANDALONE=\tyes"]
+  | otherwise = []
+
 versionReq :: VersionRange -> (String,Version)
 versionReq (ThisVersion ver)  = ("==", ver)
 versionReq (LaterVersion ver) = (">", ver)
@@ -321,6 +326,7 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
     (useAlex $ buildtools gpkgd) ++
     (useHappy $ buildtools gpkgd) ++
     (executable $ binaries gpkgd) ++
+    (standalone gpkgd) ++
     [ ""
     , ".include \"${.CURDIR}/../../lang/ghc/bsd.cabal.mk\""
     , ".include <bsd.port.mk>"
