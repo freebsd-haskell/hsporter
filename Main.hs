@@ -229,12 +229,14 @@ findCategory cmap c =
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
 dependencies baseLibs =
-  sortBy (compare `on` (map toUpper . fst)) .
+  nubBy ((==) `on` view) .
+  sortBy (compare `on` view) .
   map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
   filter (not . baselib) .
   map convert .
   collectDeps
   where
+    view = map toUpper . fst
     convert (Dependency (PackageName p) vr) = (p, versionReq vr)
 
     baselib (p,(o,v)) = any (\(bp,bv) -> bp == p && (op o) bv vb) baseLibs
