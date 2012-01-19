@@ -180,6 +180,7 @@ license (l,lf) lictxt =
     renderLicense l =
       ["LICENSE=\t" ++ l] ++ setFile lf
       where
+        setFile ""        = []
         setFile "LICENSE" = []
         setFile other     = ["FILE_LICENSE=\t" ++ other]
 
