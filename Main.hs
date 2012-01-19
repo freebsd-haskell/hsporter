@@ -245,14 +245,13 @@ dependencies baseLibs =
         op ">"  = (>)
         op _    = (\_ _ -> True)
 
-    collectDeps gpkgd = concat [libdeps,exedeps,testdeps]
+    collectDeps gpkgd = concat [libdeps,exedeps]
       where
         libdeps   =
           case (condLibrary gpkgd) of
             Just x  -> condTreeConstraints x
             Nothing -> []
         exedeps   = concatMap (condTreeConstraints . snd) . condExecutables $ gpkgd
-        testdeps  = concatMap (condTreeConstraints . snd) . condTestSuites  $ gpkgd
 
 binaries :: GenericPackageDescription -> [String]
 binaries gpkgd = sort $ map fst (condExecutables gpkgd)
@@ -341,7 +340,7 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
       (show $ ctYear ts)
 
     buildtools gpkgd =
-      concatMap buildTools $ concat [libTools,exeTools,testTools]
+      concatMap buildTools $ concat [libTools,exeTools]
       where
         libTools  =
           case (condLibrary gpkgd) of
@@ -350,9 +349,6 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
 
         exeTools  =
           map (buildInfo . condTreeData . snd) . condExecutables $ gpkgd
-
-        testTools =
-          map (testBuildInfo . condTreeData . snd) . condTestSuites  $ gpkgd
 
 
 distinfoOf :: PackageDescription -> BS.ByteString -> String
