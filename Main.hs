@@ -391,13 +391,13 @@ licensingOf = DP.license &&& DP.licenseFile
 
 printUsage :: IO ()
 printUsage = do
-  putStrLn "Usage: hsporter <URL to the .cabal>"
+  putStrLn "Usage: hsporter <URL to the .cabal> [port category]"
   exitSuccess
 
 main :: IO ()
 main = do
   args <- getArgs
-  when (length args /= 1) printUsage
+  when (length args < 1) printUsage
   url <- return $ head args
   baseLibs <- getBaseLibs
   catMap <- DM.fromList <$> getCategoryMap
@@ -405,7 +405,8 @@ main = do
   cabal <- getDescription url
   ParseOk _ gpkg <- return $ parsePackageDescription cabal
   let pkg = packageDescription gpkg
-  let category = findCategory catMap (DP.category pkg)
+  let category | (length args > 1) = args !! 1
+               | otherwise         = findCategory catMap (DP.category pkg)
   let tgzUrl = tarballOf pkg True
   putStrLn $ "Fetching " ++ tgzUrl ++ "..."
   tarball <- getTarball tgzUrl
