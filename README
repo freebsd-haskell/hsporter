@@ -9,11 +9,12 @@ INSTALLATION:
 
 USAGE:
   Synopsis:
-    hsporter cabal_description_url
+    hsporter cabal_description_url [category]
 
     where
       cabal_description_url = valid URL of a Cabal package (probably on
         HackageDB)
+      category = FreeBSD port category
 
   Example:
     Issue the following command.
