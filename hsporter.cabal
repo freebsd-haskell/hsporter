@@ -19,6 +19,7 @@ tested-with:    GHC == 7.0.4
 data-files:
   core.conf
   categories.conf
+  platform.conf
 
 library
   exposed-modules:
@@ -43,3 +44,6 @@ executable hsporter
 
   build-depends:
     directory == 1.1.*
+
+executable hsupdater
+  main-is: src-hsupdater/Main.hs

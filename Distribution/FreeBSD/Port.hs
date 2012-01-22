@@ -32,6 +32,7 @@ import qualified Data.Map as DM
 import Data.Maybe
 import qualified Data.Text as DT
 import Data.Version
+import Distribution.FreeBSD.Common
 import Distribution.License
 import Distribution.ModuleName hiding (main)
 import Distribution.Package
@@ -69,9 +70,6 @@ format w t =
     stuff     = DT.intercalate (DT.pack " ")
     dist x y  = abs (x - y)
 
-hackageUrl  :: String
-hackageUrl = "http://hackage.haskell.org/packages/archive/"
-
 fullNameOf :: PackageDescription -> String
 fullNameOf pkgd = prefix ++ nameOf pkgd
 
@@ -98,7 +96,7 @@ tarballOf pkgd withUrl
   where
     url =
       if withUrl
-        then hackageUrl ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
+        then hackageURI ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
         else ""
 
 tgzEntries :: BS.ByteString -> Entries
