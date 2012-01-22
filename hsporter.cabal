@@ -20,6 +20,7 @@ data-files:
   core.conf
   categories.conf
   platform.conf
+  hsupdater.conf.sample
 
 library
   exposed-modules:
