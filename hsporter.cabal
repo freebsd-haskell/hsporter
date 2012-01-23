@@ -24,7 +24,9 @@ data-files:
 
 library
   exposed-modules:
+    Distribution.FreeBSD.Common
     Distribution.FreeBSD.Port
+    Distribution.FreeBSD.Update
 
   build-depends:
     base,
