@@ -216,13 +216,17 @@ findCategory cmap c =
     find x = DM.findWithDefault "misc" x cmap
     distrib = map (length &&& head) . group . sort
 
+defaultFlags = map flagName . filter flagDefault . genPackageFlags
+
+active gpkgd (Var (Flag f)) = f `elem` (defaultFlags gpkgd)
+active _ _                  = False
+
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
-dependencies baseLibs =
-  nubBy ((==) `on` fst) .
+dependencies baseLibs gpkgd =
   sortBy (compare `on` (map toUpper . fst)) .
   map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
   filter (not . baselib) .
-  map convert .
+  map convert $
   collectDeps
   where
     convert (Dependency (PackageName p) vr) = (p, versionReq vr)
@@ -235,16 +239,32 @@ dependencies baseLibs =
         op ">"  = (>)
         op _    = (\_ _ -> True)
 
-    collectDeps gpkgd = concat [libdeps,exedeps]
+    collectDeps = concat [libdeps,exedeps]
       where
         libdeps   =
           case (condLibrary gpkgd) of
-            Just x  -> condTreeConstraints x
+            Just x  -> findDeps x
             Nothing -> []
-        exedeps   = concatMap (condTreeConstraints . snd) . condExecutables $ gpkgd
+        exedeps   = concatMap (findDeps . snd) . condExecutables $ gpkgd
+
+    findDeps = uncurry (++) .
+      ((condTreeConstraints) &&&
+      (concatMap condTreeConstraints . catMaybes . map pick . condTreeComponents))
+
+    pick (opt,pri,sec)
+      | active gpkgd opt  = Just pri
+      | otherwise         = sec
 
 binaries :: GenericPackageDescription -> [String]
-binaries gpkgd = sort $ map fst (condExecutables gpkgd)
+binaries gpkgd = sort . map fst . filter enabled . condExecutables $ gpkgd
+  where
+    enabled (_,c)
+      | null conds  = True
+      | otherwise   = or conds
+      where conds = map f . condTreeComponents $ c
+
+    f (opt,d,_) = (active gpkgd opt) && included d
+      where included = buildable . buildInfo . condTreeData
 
 standalone :: GenericPackageDescription -> [String]
 standalone gpkgd
