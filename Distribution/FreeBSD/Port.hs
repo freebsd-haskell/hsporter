@@ -308,6 +308,11 @@ useHappy bt
   | uses "happy" bt = ["USE_HAPPY=\tyes"]
   | otherwise       = []
 
+useC2hs :: [Dependency] -> [String]
+useC2hs bt
+  | uses "c2hs" bt  = ["USE_C2HS=\tyes"]
+  | otherwise       = []
+
 executable :: [String] -> [String]
 executable []   = []
 executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
@@ -335,6 +340,7 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
     (useHackage $ dependencies baseLibs gpkgd) ++
     (useAlex $ buildtools gpkgd) ++
     (useHappy $ buildtools gpkgd) ++
+    (useC2hs $ buildtools gpkgd) ++
     (executable $ binaries gpkgd) ++
     (standalone gpkgd) ++
     [ ""
