@@ -259,10 +259,7 @@ dependencies baseLibs gpkgd =
 binaries :: GenericPackageDescription -> [String]
 binaries gpkgd = sort . map fst . filter enabled . condExecutables $ gpkgd
   where
-    enabled (_,c)
-      | null conds  = True
-      | otherwise   = or conds
-      where conds = map f . condTreeComponents $ c
+    enabled = and . map f . condTreeComponents . snd
 
     f (opt,d,_) = (active gpkgd opt) && included d
       where included = buildable . buildInfo . condTreeData
