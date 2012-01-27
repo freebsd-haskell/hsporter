@@ -223,6 +223,7 @@ active _ _                  = False
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
 dependencies baseLibs gpkgd =
+  nub .
   sortBy (compare `on` (map toUpper . fst)) .
   map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
   filter (not . baselib) .
