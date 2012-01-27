@@ -378,8 +378,13 @@ distinfoOf pkgd tgz
 
 pkgDescrOf :: PackageDescription -> String
 pkgDescrOf pkgd
-  = unlines $ (format 72 Nothing . words . description $ pkgd) ++ ["", www url]
+  = unlines $ (format 72 Nothing . words $ contents) ++ ["", www url]
     where
+      desc = description pkgd
+      contents
+        | null desc = synopsis pkgd
+        | otherwise = desc
+
       PackageName pn = (pkgName . package) pkgd
       hp = homepage pkgd
       url
