@@ -219,7 +219,10 @@ findCategory cmap c =
 defaultFlags = map flagName . filter flagDefault . genPackageFlags
 
 active gpkgd (Var (Flag f)) = f `elem` (defaultFlags gpkgd)
-active _ _                  = False
+active gpkgd (CNot c)       = not $ active gpkgd c
+active gpkgd (COr c1 c2)    = or $ active gpkgd <$> [c1,c2]
+active gpkgd (CAnd c1 c2)   = and $ active gpkgd <$> [c1,c2]
+active _ _                  = True
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
 dependencies baseLibs gpkgd =
@@ -256,13 +259,16 @@ dependencies baseLibs gpkgd =
       | active gpkgd opt  = Just pri
       | otherwise         = sec
 
+sand :: [Bool] -> Bool
+sand [] = False
+sand xs = and xs
+
 binaries :: GenericPackageDescription -> [String]
 binaries gpkgd = sort . map fst . filter enabled . condExecutables $ gpkgd
   where
-    enabled = and . map f . condTreeComponents . snd
-
-    f (opt,d,_) = (active gpkgd opt) && included d
-      where included = buildable . buildInfo . condTreeData
+    enabled     = sand . map f . filter g . condTreeComponents . snd
+    f (_,d,_)   = buildable . buildInfo . condTreeData $ d
+    g (opt,_,_) = active gpkgd opt
 
 standalone :: GenericPackageDescription -> [String]
 standalone gpkgd
