@@ -22,7 +22,7 @@ getConfiguration path = do
   return $ [m ! "dbdir", m ! "portsdir", m ! "updatesdir"]
   where
     formatLine line =
-      case (DT.splitOn (DT.pack "=") line) of
+      case (DT.strip <$> DT.splitOn (DT.pack "=") line) of
         (key:val:_) -> Just (DT.unpack . DT.toLower $ key,DT.unpack val)
         _           -> Nothing
 
@@ -30,7 +30,7 @@ showUpdates :: [FilePath] -> IO String
 showUpdates files = do
   (hdm,cpm,vcm,ports) <- initialize files
   let updates = learnUpdates hdm cpm vcm ports
-  return $ unlines $ updateLine <$> updates
+  return . unlines . mapMaybe updateLine $ updates
 
 downloadCabalFiles :: FilePath -> [(PackageName,Category,Version)] -> HDM -> IO ()
 downloadCabalFiles dbdir ports hdm = do
@@ -87,13 +87,14 @@ downloadUpdates [dbDir,portsDir,updatesDir,plConf] opts = do
   createDirectoryIfMissing True updatesDir
   (hdm,cpm,vcm,ports) <- initialize [dbDir,portsDir,plConf]
   forM_ (learnUpdates hdm cpm vcm ports) $
-    \(p@(PackageName pn),Category c,v1,v) -> do
-      let [v1',v'] = showVersion <$> [v1,v]
-      putStr $ printf "Updating port for %s (%s -> %s)..." pn v1' v'
-      dump <- readFile $ dbDir </> cabal (pn ++ "-" ++ v')
-      (ppath,port) <- buildPort opts dump (Just c)
-      createPortFiles (updatesDir </> ppath) port
-      putStrLn "done."
+    \(p@(PackageName pn),Category c,v,max,sugg) -> do
+      let [v',max',sugg'] = showVersion <$> [v,max,sugg]
+      when (v < sugg) $ do
+        putStr $ printf "Updating port for %s (%s -> %s)..." pn v' sugg'
+        dump <- readFile $ dbDir </> cabal (pn ++ "-" ++ sugg')
+        (ppath,port) <- buildPort opts dump (Just c)
+        createPortFiles (updatesDir </> ppath) port
+        putStrLn "done."
   putStrLn "Update finished."
 
 body :: [FilePath] -> IO ()
@@ -103,6 +104,10 @@ body [dbDir,portsDir,updatesDir] = do
   platConf <- getDataFileName "platform.conf"
   let opts = BuildOpts coreConf catsConf
   cache [dbDir,portsDir]
+  putStrLn "== Port Status Overview =="
+  s <- showUpdates [dbDir,portsDir,platConf]
+  putStrLn s
+  putStrLn "== Actual Updates =="
   downloadUpdates [dbDir,portsDir,updatesDir,platConf] opts
 
 cfg :: FilePath

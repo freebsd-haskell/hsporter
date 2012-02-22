@@ -149,9 +149,11 @@ formatPackage = first PackageName . second (flip Version [])
 checkDependency :: HDM -> CPM -> VCM -> Dependency -> Bool
 checkDependency hdm cpm vcm (Dependency p vr) =
   case (DM.lookup p hdm) of
-    Nothing   -> True
+    Nothing   -> False
     Just x    ->
-      or (isVersionAllowed hdm cpm vcm <$> (repeat p `zip` vs))
+      case (isVersionAllowed hdm cpm vcm <$> (repeat p `zip` vs)) of
+        [] -> False
+        b  -> or b
       where
         vs = filter (flip withinRange vr) x
 
@@ -168,13 +170,8 @@ isVersionAllowed hdm cpm vcm (p,v) =
 
         dependenciesAllowed =
           case deps of
-            Nothing -> True
+            Nothing -> False
             Just dp -> and (checkDependency hdm cpm vcm <$> dp)
-
-filterVersions :: HDM -> CPM -> VCM -> PackageName -> [Version]
-filterVersions hdm cpm vcm p =
-  snd <$> filter (isVersionAllowed hdm cpm vcm) versions
-  where versions = (repeat p) `zip` (hdm ! p)
 
 getPortVersions :: FilePath -> IO [(PackageName,Category,Version)]
 getPortVersions fn = do
@@ -184,24 +181,38 @@ getPortVersions fn = do
     translate (n:c:v:_) = (PackageName n,Category c,toVersion v)
 
 learnUpdates :: HDM -> CPM -> VCM -> [(PackageName,Category,Version)]
-  -> [(PackageName,Category,Version,Version)]
+  -> [(PackageName,Category,Version,Version,Version)]
 learnUpdates hdm cpm vcm ports = foldr isThereUpdate [] ports
   where
     isThereUpdate :: (PackageName,Category,Version)
-      -> [(PackageName,Category,Version,Version)]
-      -> [(PackageName,Category,Version,Version)]
+      -> [(PackageName,Category,Version,Version,Version)]
+      -> [(PackageName,Category,Version,Version,Version)]
     isThereUpdate (p,c,v) ls
-      | (not $ null (available p)) && (maximum . available $ p) > v =
-        (p,c,v,maximum . available $ p) : ls
+      | (not . null $ available) && (maximum available > v) =
+        (p,c,v,maximum available,suggested) : ls
       | otherwise = ls
       where
-        available = filterVersions hdm cpm vcm
+        suggested
+          | (not . null $ allowed) = snd $ maximum allowed
+          | otherwise              = v
 
-updateLine :: (PackageName,Category,Version,Version) -> String
-updateLine (PackageName p,_,v1,v2) = printf fmt p v1' v2'
+        allowed     = filter (isVersionAllowed hdm cpm vcm) candidates
+        candidates  = (repeat p) `zip` (filter (>= v) $ hdm ! p)
+        available   = snd <$> candidates
+
+updateLine :: (PackageName,Category,Version,Version,Version) -> Maybe String
+updateLine (PackageName p,_,v,max,sugg)
+  | v == max && v   == sugg = Nothing
+  | v <  max && max == sugg = Just $
+    printf "%-32s %-12s ---> %-12s" p v' sugg'
+  | v <  max && v   == sugg = Just $
+    printf "%-32s %-12s -/-> %-12s" p v' max'
+  | otherwise = Just $
+    printf "%-32s %-12s -~-> %-12s" p v' sugg'
   where
-    fmt       = "%-32s %-12s -> %-12s"
-    [v1',v2'] = showVersion <$> [v1,v2]
+    v'    = showVersion v
+    max'  = showVersion max
+    sugg' = showVersion sugg
 
 initialize :: [FilePath] -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
 initialize [dbDir,portsDir,platformConf] = do
