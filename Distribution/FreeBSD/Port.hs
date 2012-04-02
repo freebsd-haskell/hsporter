@@ -116,7 +116,7 @@ licenseText tgz name
     entries = tgzEntries tgz
     files   = foldEntries find [] (const []) entries
     find x ls  =
-      if ((takeBaseName $ entryPath x) == name)
+      if (name `isSuffixOf` entryPath x)
         then cts:ls
         else ls
           where
