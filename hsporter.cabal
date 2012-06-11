@@ -50,3 +50,5 @@ executable hsporter
 
 executable hsupdater
   main-is: src-hsupdater/Main.hs
+  extensions: CPP
+  cpp-options: -DSTANDALONE

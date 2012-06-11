@@ -13,7 +13,10 @@ import Distribution.Package
 import System.Directory
 import System.FilePath.Posix
 import Text.Printf
+#ifdef STANDALONE
 import Paths_hsporter
+#endif
+import Data.List
 
 getConfiguration :: FilePath -> IO [FilePath]
 getConfiguration path = do
@@ -27,23 +30,32 @@ getConfiguration path = do
         _           -> Nothing
 
 showUpdates :: [FilePath] -> IO String
-showUpdates files = do
+showUpdates files@(_:_:platConf:_) = do
   (hdm,cpm,vcm,ports) <- initialize files
-  let updates = learnUpdates hdm cpm vcm ports
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  let updates = learnUpdates hdm cpm vcm baselibs ports
   return . unlines . mapMaybe updateLine $ updates
+
+fetchCabalFile :: FilePath -> PackageName -> Version -> IO ()
+fetchCabalFile dbDir (PackageName pn) v = do
+  let ver = showVersion v
+  let uri = getCabalURI (pn,ver)
+  let fn  = pn ++ "-" ++ ver
+  putStr $ "Fetching " ++ fn ++ "..."
+  downloadFile uri >>= writeFile (dbDir </> cabal fn)
+  putStrLn "done."
+
+resetDirectory :: FilePath -> IO ()
+resetDirectory dir = do
+  removeDirectoryRecursive dir
+  createDirectoryIfMissing True dir
 
 downloadCabalFiles :: FilePath -> [(PackageName,Category,Version)] -> HDM -> IO ()
 downloadCabalFiles dbdir ports hdm = do
-  removeDirectoryRecursive dbdir
-  createDirectoryIfMissing True dbdir
-  forM_ ports $ \(p@(PackageName pn),_,v) -> do
-    forM_ (filter (>= v) $ hdm ! p) $ \v -> do
-      let ver = showVersion v
-      let uri = getCabalURI (pn,ver)
-      let fn = pn ++ "-" ++ ver
-      putStr $ "Fetching " ++ fn ++ "..."
-      downloadFile uri >>= writeFile (dbdir </> cabal fn)
-      putStrLn "done."
+  resetDirectory dbdir
+  forM_ ports $ \(p,_,v) -> do
+    forM_ (filter (>= v) $ hdm ! p) $ \v ->
+      fetchCabalFile dbdir p v
 
 cachePortVersions :: FilePath -> IO ()
 cachePortVersions portsDir = do
@@ -61,14 +73,15 @@ cachePortVersions portsDir = do
 cacheHackageDB :: IO ()
 cacheHackageDB = downloadFile hackageLogURI >>= writeFile hackageLog
 
-cacheDB :: FilePath -> IO ()
-cacheDB dbDir = do
+cacheDB :: FilePath -> FilePath -> IO ()
+cacheDB dbDir platConf = do
   ports <- getPortVersions portVersionsFile
-  hdm <- buildHackageDatabase hackageLog
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  hdm <- buildHackageDatabase hackageLog baselibs
   downloadCabalFiles dbDir ports hdm
 
 cache :: [FilePath] -> IO ()
-cache [dbDir,portsDir] = do
+cache [dbDir,portsDir,platConf] = do
   putStrLn "Colllecting:"
   putStr "Port information..."
   cachePortVersions portsDir
@@ -77,7 +90,7 @@ cache [dbDir,portsDir] = do
   cacheHackageDB
   putStrLn "done."
   putStr "Cabal package descriptions..."
-  cacheDB dbDir
+  cacheDB dbDir platConf
   putStrLn "done."
 
 downloadUpdates :: [FilePath] -> BuildOpts -> IO ()
@@ -86,24 +99,117 @@ downloadUpdates [dbDir,portsDir,updatesDir,plConf] opts = do
   removeDirectoryRecursive updatesDir
   createDirectoryIfMissing True updatesDir
   (hdm,cpm,vcm,ports) <- initialize [dbDir,portsDir,plConf]
-  forM_ (learnUpdates hdm cpm vcm ports) $
-    \(p@(PackageName pn),Category c,v,max,sugg) -> do
-      let [v',max',sugg'] = showVersion <$> [v,max,sugg]
-      when (v < sugg) $ do
-        putStr $ printf "Updating port for %s (%s -> %s)..." pn v' sugg'
-        dump <- readFile $ dbDir </> cabal (pn ++ "-" ++ sugg')
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs plConf
+  forM_ (learnUpdates hdm cpm vcm baselibs ports) $
+    \(p@(PackageName pn),Category c,v,v1,_,_) -> do
+      let [v',v1'] = showVersion <$> [v,v1]
+      when (v < v1) $ do
+        putStr $ printf "Updating port for %s (%s) (%s -> %s)..." pn c v' v1'
+        dump <- readFile $ dbDir </> cabal (pn ++ "-" ++ v1')
         (ppath,port) <- buildPort opts dump (Just c)
         createPortFiles (updatesDir </> ppath) port
         putStrLn "done."
   putStrLn "Update finished."
 
+checkCfg :: ([FilePath] -> IO ()) -> IO ()
+checkCfg block = do
+  haveCfg <- doesFileExist cfg
+  if haveCfg
+    then getConfiguration cfg >>= block
+    else putStrLn $ printf "No \"%s\" found.  Aborting." cfg
+
+[getPlatformConf,getCoreConf,getCategoriesConf] =
+#ifdef STANDALONE
+  [ getDataFileName "platform.conf"
+  , getDataFileName "core.conf"
+  , getDataFileName "categories.conf"
+  ]
+#else
+  [ return "platform.conf"
+  , return "core.conf"
+  , return "categories.conf"
+  ]
+#endif
+
+cmdPrintUpdates :: IO ()
+cmdPrintUpdates = checkCfg $ \(dbDir:portsDir:_) -> do
+  platConf <- getPlatformConf
+  showUpdates [dbDir,portsDir,platConf] >>= putStrLn
+
+cmdDownloadUpdates :: IO ()
+cmdDownloadUpdates = checkCfg $ \(dbDir:portsDir:updatesDir:_) -> do
+  platConf <- getPlatformConf
+  coreConf <- getCoreConf
+  catsConf <- getCategoriesConf
+  let opts = BuildOpts coreConf catsConf
+  downloadUpdates [dbDir,portsDir,updatesDir,platConf] opts
+
+cmdUpdatePortVersions :: IO ()
+cmdUpdatePortVersions = checkCfg $ \(_:portsDir:_) -> do
+  cachePortVersions portsDir
+
+cmdGetLatestHackageVersions :: IO ()
+cmdGetLatestHackageVersions = checkCfg $ \(dbDir:_) -> do
+  cacheHackageDB
+  ports <- getPortVersions portVersionsFile
+  platConf <- getPlatformConf
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  hdm <- buildHackageDatabase hackageLog baselibs
+  resetDirectory dbDir
+  forM_ ports $ \(p@(PackageName pn),_,v) -> do
+    let available = filter (>= v) $ hdm ! p
+    if (not . null $ available)
+      then do
+        let latest = maximum available
+        fetchCabalFile dbDir p latest
+      else do
+        putStrLn $ "Cannot be get: " ++ pn ++ ", " ++ showVersion v
+        putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
+
+cmdFetchCabal :: String -> String -> IO ()
+cmdFetchCabal name version = checkCfg $ \(dbDir:_) -> do
+  files <- filter (f name) <$> getDirectoryContents dbDir
+  mapM_ removeFile $ map (dbDir </>) files
+  fetchCabalFile dbDir (PackageName name) (toVersion version)
+  where
+    f r x
+      | null l    = False
+      | otherwise = (reverse $ tail l) == r
+      where
+        l = snd . break (== '-') . reverse $ x
+
+cmdPrintCabalVersions :: String -> IO ()
+cmdPrintCabalVersions name = do
+  platConf <- getPlatformConf
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  hdm <- buildHackageDatabase hackageLog baselibs
+  let versions = intercalate ", " $ showVersion <$> hdm ! (PackageName name)
+  putStrLn versions
+
+cmdIsVersionAllowed :: String -> String -> IO ()
+cmdIsVersionAllowed name version = checkCfg $ \(dbDir:portsDir:_) -> do
+  platConf <- getPlatformConf
+  (hdm,cpm,vcm,_) <- initialize [dbDir,portsDir,platConf]
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  let (rs,dp)     = isVersionAllowed hdm cpm vcm baselibs pk
+  let restricted  = [ p | ((PackageName p,_),_) <- rs ]
+  let unsatisfied = [ d | (PackageName d,_) <- dp ]
+  when (not . null $ restricted) $
+    putStrLn $ "Restricted by:  " ++ intercalate ", " restricted
+  when (not . null $ unsatisfied) $
+    putStrLn $ "Unsatisfied by: " ++ intercalate ", " unsatisfied
+  when (null restricted && null unsatisfied) $
+    putStrLn "OK!"
+  where
+    pk = (PackageName name, toVersion version)
+
 body :: [FilePath] -> IO ()
 body [dbDir,portsDir,updatesDir] = do
-  coreConf <- getDataFileName "core.conf"
-  catsConf <- getDataFileName "categories.conf"
-  platConf <- getDataFileName "platform.conf"
+  coreConf <- getCoreConf
+  catsConf <- getCategoriesConf
+  platConf <- getPlatformConf
   let opts = BuildOpts coreConf catsConf
-  cache [dbDir,portsDir]
+  cache [dbDir,portsDir,platConf]
   putStrLn "== Port Status Overview =="
   s <- showUpdates [dbDir,portsDir,platConf]
   putStrLn s
@@ -119,4 +225,3 @@ main = do
   if haveCfg
     then getConfiguration cfg >>= body
     else putStrLn $ printf "No \"%s\" found.  Aborting." cfg
-
