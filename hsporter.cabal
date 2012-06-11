@@ -14,10 +14,10 @@ category:       Distribution
 stability:      experimental
 build-type:     Simple
 cabal-version:  >= 1.2
-tested-with:    GHC == 7.0.4
+tested-with:    GHC == 7.4.1
 
 data-files:
-  core.conf
+  ghc.conf
   categories.conf
   platform.conf
   hsupdater.conf.sample

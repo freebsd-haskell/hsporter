@@ -30,9 +30,9 @@ getConfiguration path = do
         _           -> Nothing
 
 showUpdates :: [FilePath] -> IO String
-showUpdates files@(_:_:platConf:_) = do
+showUpdates files@(_:_:platform:_) = do
   (hdm,cpm,vcm,ports) <- initialize files
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platform
   let updates = learnUpdates hdm cpm vcm baselibs ports
   return . unlines . mapMaybe updateLine $ updates
 
@@ -74,14 +74,14 @@ cacheHackageDB :: IO ()
 cacheHackageDB = downloadFile hackageLogURI >>= writeFile hackageLog
 
 cacheDB :: FilePath -> FilePath -> IO ()
-cacheDB dbDir platConf = do
+cacheDB dbDir platform = do
   ports <- getPortVersions portVersionsFile
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platform
   hdm <- buildHackageDatabase hackageLog baselibs
   downloadCabalFiles dbDir ports hdm
 
 cache :: [FilePath] -> IO ()
-cache [dbDir,portsDir,platConf] = do
+cache [dbDir,portsDir,platform] = do
   putStrLn "Colllecting:"
   putStr "Port information..."
   cachePortVersions portsDir
@@ -90,7 +90,7 @@ cache [dbDir,portsDir,platConf] = do
   cacheHackageDB
   putStrLn "done."
   putStr "Cabal package descriptions..."
-  cacheDB dbDir platConf
+  cacheDB dbDir platform
   putStrLn "done."
 
 downloadUpdates :: [FilePath] -> BuildOpts -> IO ()
@@ -118,31 +118,34 @@ checkCfg block = do
     then getConfiguration cfg >>= block
     else putStrLn $ printf "No \"%s\" found.  Aborting." cfg
 
-[getPlatformConf,getCoreConf,getCategoriesConf] =
+[getPlatformConf,getGhcConf,getCategoriesConf] =
 #ifdef STANDALONE
   [ getDataFileName "platform.conf"
-  , getDataFileName "core.conf"
+  , getDataFileName "ghc.conf"
   , getDataFileName "categories.conf"
   ]
 #else
   [ return "platform.conf"
-  , return "core.conf"
+  , return "ghc.conf"
   , return "categories.conf"
   ]
 #endif
 
 cmdPrintUpdates :: IO ()
 cmdPrintUpdates = checkCfg $ \(dbDir:portsDir:_) -> do
+  ghcConf <- getGhcConf
   platConf <- getPlatformConf
-  showUpdates [dbDir,portsDir,platConf] >>= putStrLn
+  let platform = ghcConf ++ platConf
+  showUpdates [dbDir,portsDir,platform] >>= putStrLn
 
 cmdDownloadUpdates :: IO ()
 cmdDownloadUpdates = checkCfg $ \(dbDir:portsDir:updatesDir:_) -> do
+  ghcConf <- getGhcConf
   platConf <- getPlatformConf
-  coreConf <- getCoreConf
   catsConf <- getCategoriesConf
-  let opts = BuildOpts coreConf catsConf
-  downloadUpdates [dbDir,portsDir,updatesDir,platConf] opts
+  let opts = BuildOpts ghcConf catsConf
+  let platform = ghcConf ++ platConf
+  downloadUpdates [dbDir,portsDir,updatesDir,platform] opts
 
 cmdUpdatePortVersions :: IO ()
 cmdUpdatePortVersions = checkCfg $ \(_:portsDir:_) -> do
@@ -205,16 +208,17 @@ cmdIsVersionAllowed name version = checkCfg $ \(dbDir:portsDir:_) -> do
 
 body :: [FilePath] -> IO ()
 body [dbDir,portsDir,updatesDir] = do
-  coreConf <- getCoreConf
+  ghcConf <- getGhcConf
   catsConf <- getCategoriesConf
   platConf <- getPlatformConf
-  let opts = BuildOpts coreConf catsConf
+  let opts = BuildOpts ghcConf catsConf
   cache [dbDir,portsDir,platConf]
   putStrLn "== Port Status Overview =="
-  s <- showUpdates [dbDir,portsDir,platConf]
+  let baselibs = ghcConf ++ platConf
+  s <- showUpdates [dbDir,portsDir,baselibs]
   putStrLn s
   putStrLn "== Actual Updates =="
-  downloadUpdates [dbDir,portsDir,updatesDir,platConf] opts
+  downloadUpdates [dbDir,portsDir,updatesDir,baselibs] opts
 
 cfg :: FilePath
 cfg = "hsupdater.conf"

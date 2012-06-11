@@ -15,9 +15,9 @@ printUsage = do
 
 main :: IO ()
 main = do
-  coreConf <- getDataFileName "core.conf"
+  ghcConf <- getDataFileName "ghc.conf"
   catsConf <- getDataFileName "categories.conf"
-  let opts = BuildOpts coreConf catsConf
+  let opts = BuildOpts ghcConf catsConf
   args <- getArgs
   when (length args < 1) printUsage
   url <- return $ head args
