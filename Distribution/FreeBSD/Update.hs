@@ -127,10 +127,8 @@ normalize = filter nonEmpty . map (DT.strip . uncomment)
     nonEmpty  = (not . DT.null)
     uncomment = DT.takeWhile (/= '#')
 
-getBaseLibs :: FilePath -> IO [(PackageName,Version)]
-getBaseLibs fn = do
-  contents <- (DT.lines . DT.pack) <$> readFile fn
-  return $ translate <$> normalize contents
+getBaseLibs :: Platform -> [(PackageName,Version)]
+getBaseLibs (Platform p) = map translate . normalize . DT.lines . DT.pack $ p
   where
     translate l = (PackageName $ n,toVersion v)
       where (n:v:_) = DT.unpack <$> DT.words l
@@ -158,10 +156,8 @@ sumVersionConstraints :: CPM -> [(PackageName,Version)] -> VCM
 sumVersionConstraints cpm core =
   flip addCoreVersionConstraints core $ getVersionConstraints cpm
 
-buildVersionConstraints :: CPM -> FilePath -> IO VCM
-buildVersionConstraints cpm plat = do
-  baselibs <- getBaseLibs plat
-  return $ sumVersionConstraints cpm baselibs
+buildVersionConstraints :: CPM -> Platform -> VCM
+buildVersionConstraints cpm = sumVersionConstraints cpm . getBaseLibs
 
 formatPackage :: (String,[Int]) -> (PackageName,Version)
 formatPackage = first PackageName . second (flip Version [])
@@ -239,11 +235,11 @@ updateLine (PackageName p,Category c,v,v1,rs,dp)
     restricts = intercalate ", " [ p | PackageName p <- rs ]
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
 
-initialize :: [FilePath] -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
-initialize [dbDir,portsDir,platformConf] = do
+initialize :: [FilePath] -> Platform -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
+initialize [dbDir,portsDir] platform = do
   cpm <- buildCabalDatabase dbDir
   let hdm = getCabalVersions cpm
-  vcm <- buildVersionConstraints cpm platformConf
+  let vcm = buildVersionConstraints cpm platform
   ports <- getPortVersions portVersionsFile
   return $ (hdm,cpm,vcm,ports)
 

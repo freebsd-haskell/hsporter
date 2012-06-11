@@ -8,6 +8,7 @@ import Data.Map ((!))
 import Data.Maybe
 import qualified Data.Text as DT
 import Data.Version
+import Distribution.FreeBSD.Common
 import Distribution.FreeBSD.Port hiding (normalize)
 import Distribution.FreeBSD.Update
 import Distribution.Package
@@ -30,10 +31,10 @@ getConfiguration path = do
         (key:val:_) -> Just (DT.unpack . DT.toLower $ key,DT.unpack val)
         _           -> Nothing
 
-showUpdates :: [FilePath] -> IO String
-showUpdates files@(_:_:platform:_) = do
-  (hdm,cpm,vcm,ports) <- initialize files
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platform
+showUpdates :: [FilePath] -> Platform -> IO String
+showUpdates files platform = do
+  (hdm,cpm,vcm,ports) <- initialize files platform
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   let updates = learnUpdates hdm cpm vcm baselibs ports
   return . unlines . mapMaybe updateLine $ updates
 
@@ -74,15 +75,15 @@ cachePortVersions portsDir = do
 cacheHackageDB :: IO ()
 cacheHackageDB = downloadFile hackageLogURI >>= writeFile hackageLog
 
-cacheDB :: FilePath -> FilePath -> IO ()
+cacheDB :: FilePath -> Platform -> IO ()
 cacheDB dbDir platform = do
   ports <- getPortVersions portVersionsFile
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platform
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   hdm <- buildHackageDatabase hackageLog baselibs
   downloadCabalFiles dbDir ports hdm
 
-cache :: [FilePath] -> IO ()
-cache [dbDir,portsDir,platform] = do
+cache :: [FilePath] -> Platform -> IO ()
+cache [dbDir,portsDir] platform = do
   putStrLn "Colllecting:"
   putStr "Port information..."
   cachePortVersions portsDir
@@ -94,13 +95,13 @@ cache [dbDir,portsDir,platform] = do
   cacheDB dbDir platform
   putStrLn "done."
 
-downloadUpdates :: [FilePath] -> BuildOpts -> IO ()
-downloadUpdates [dbDir,portsDir,updatesDir,plConf] opts = do
+downloadUpdates :: [FilePath] -> Platform -> BuildOpts -> IO ()
+downloadUpdates [dbDir,portsDir,updatesDir] platform opts = do
   putStrLn "Update starts."
   removeDirectoryRecursive updatesDir
   createDirectoryIfMissing True updatesDir
-  (hdm,cpm,vcm,ports) <- initialize [dbDir,portsDir,plConf]
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs plConf
+  (hdm,cpm,vcm,ports) <- initialize [dbDir,portsDir] platform
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   forM_ (learnUpdates hdm cpm vcm baselibs ports) $
     \(p@(PackageName pn),Category c,v,v1,_,_) -> do
       let [v',v1'] = showVersion <$> [v,v1]
@@ -126,27 +127,28 @@ checkCfg block = do
   , getDataFileName "categories.conf"
   ]
 #else
-  [ return "platform.conf"
-  , return "ghc.conf"
-  , return "categories.conf"
+  [ return "platform.conf"   :: IO FilePath
+  , return "ghc.conf"        :: IO FilePath
+  , return "categories.conf" :: IO FilePath
   ]
 #endif
 
 cmdPrintUpdates :: IO ()
 cmdPrintUpdates = checkCfg $ \(dbDir:portsDir:_) -> do
-  ghcConf <- getGhcConf
-  platConf <- getPlatformConf
-  let platform = ghcConf ++ platConf
-  showUpdates [dbDir,portsDir,platform] >>= putStrLn
+  ghcLibs <- getGhcConf >>= readFile
+  platLibs <- getPlatformConf >>= readFile
+  let platform = Platform (ghcLibs ++ platLibs)
+  showUpdates [dbDir,portsDir] platform >>= putStrLn
 
 cmdDownloadUpdates :: IO ()
 cmdDownloadUpdates = checkCfg $ \(dbDir:portsDir:updatesDir:_) -> do
   ghcConf <- getGhcConf
-  platConf <- getPlatformConf
+  ghcLibs <- readFile ghcConf
+  platConf <- getPlatformConf >>= readFile
   catsConf <- getCategoriesConf
   let opts = BuildOpts ghcConf catsConf
-  let platform = ghcConf ++ platConf
-  downloadUpdates [dbDir,portsDir,updatesDir,platform] opts
+  let platform = Platform (ghcLibs ++ platConf)
+  downloadUpdates [dbDir,portsDir,updatesDir] platform opts
 
 cmdUpdatePortVersions :: IO ()
 cmdUpdatePortVersions = checkCfg $ \(_:portsDir:_) -> do
@@ -156,8 +158,10 @@ cmdGetLatestHackageVersions :: IO ()
 cmdGetLatestHackageVersions = checkCfg $ \(dbDir:_) -> do
   cacheHackageDB
   ports <- getPortVersions portVersionsFile
-  platConf <- getPlatformConf
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  ghcLibs <- getGhcConf >>= readFile
+  platLibs <- getPlatformConf >>= readFile
+  let platform = Platform (ghcLibs ++ platLibs)
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   hdm <- buildHackageDatabase hackageLog baselibs
   resetDirectory dbDir
   forM_ ports $ \(p@(PackageName pn),_,v) -> do
@@ -184,17 +188,21 @@ cmdFetchCabal name version = checkCfg $ \(dbDir:_) -> do
 
 cmdPrintCabalVersions :: String -> IO ()
 cmdPrintCabalVersions name = do
-  platConf <- getPlatformConf
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  ghcLibs <- getGhcConf >>= readFile
+  platLibs <- getPlatformConf >>= readFile
+  let platform = Platform (ghcLibs ++ platLibs)
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   hdm <- buildHackageDatabase hackageLog baselibs
   let versions = intercalate ", " $ showVersion <$> hdm ! (PackageName name)
   putStrLn versions
 
 cmdIsVersionAllowed :: String -> String -> IO ()
 cmdIsVersionAllowed name version = checkCfg $ \(dbDir:portsDir:_) -> do
-  platConf <- getPlatformConf
-  (hdm,cpm,vcm,_) <- initialize [dbDir,portsDir,platConf]
-  baselibs <- Distribution.FreeBSD.Update.getBaseLibs platConf
+  ghcLibs <- getGhcConf >>= readFile
+  platLibs <- getPlatformConf >>= readFile
+  let platform = Platform (ghcLibs ++ platLibs)
+  (hdm,cpm,vcm,_) <- initialize [dbDir,portsDir] platform
+  let baselibs    = Distribution.FreeBSD.Update.getBaseLibs platform
   let (rs,dp)     = isVersionAllowed hdm cpm vcm baselibs pk
   let restricted  = [ p | ((PackageName p,_),_) <- rs ]
   let unsatisfied = [ d | (PackageName d,_) <- dp ]
@@ -209,17 +217,17 @@ cmdIsVersionAllowed name version = checkCfg $ \(dbDir:portsDir:_) -> do
 
 body :: [FilePath] -> IO ()
 body [dbDir,portsDir,updatesDir] = do
-  ghcConf <- getGhcConf
+  ghcConf  <- getGhcConf
+  ghcLibs  <- readFile ghcConf
+  platLibs <- getPlatformConf >>= readFile
   catsConf <- getCategoriesConf
-  platConf <- getPlatformConf
   let opts = BuildOpts ghcConf catsConf
-  cache [dbDir,portsDir,platConf]
+  let platform = Platform (ghcLibs ++ platLibs)
+  cache [dbDir,portsDir] platform
   putStrLn "== Port Status Overview =="
-  let baselibs = ghcConf ++ platConf
-  s <- showUpdates [dbDir,portsDir,baselibs]
-  putStrLn s
+  showUpdates [dbDir,portsDir] platform >>= putStrLn
   putStrLn "== Actual Updates =="
-  downloadUpdates [dbDir,portsDir,updatesDir,baselibs] opts
+  downloadUpdates [dbDir,portsDir,updatesDir] platform opts
 
 cfg :: FilePath
 cfg = "hsupdater.conf"
