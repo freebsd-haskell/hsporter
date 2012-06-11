@@ -99,7 +99,7 @@ tarballOf pkgd withUrl
         then hackageURI ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
         else ""
 
-tgzEntries :: BS.ByteString -> Entries
+tgzEntries :: BS.ByteString -> Entries FormatError
 tgzEntries = Tar.read . GZip.decompress
 
 tarballIndex :: BS.ByteString -> [String]
