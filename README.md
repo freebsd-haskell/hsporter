@@ -2,7 +2,7 @@
 
 ## Installation
 
-    runhaskell Seup.lhs configure
+    runhaskell Setup.lhs configure
     runhaskell Setup.lhs build
     runhaskell Setup.lhs haddock --executable (for documentation)
     runhaskell Setup.lhs install
