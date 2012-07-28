@@ -3,6 +3,7 @@ module Main where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader
 import qualified Data.Map as DM
 import Data.Map ((!))
 import Data.Maybe
@@ -39,93 +40,101 @@ getConfiguration path = do
         (key:val:_) -> Just (DT.unpack . DT.toLower $ key,DT.unpack val)
         _           -> Nothing
 
-showUpdates :: Cfg -> IO String
-showUpdates c = do
-  (hdm,cpm,vcm,ports) <- initialize c
-  let updates = learnUpdates hdm cpm vcm ports c
+showUpdates :: HPM String
+showUpdates = do
+  (hdm,cpm,vcm,ports) <- initialize
+  updates <- learnUpdates hdm cpm vcm ports
   return . unlines . mapMaybe updateLine $ updates
 
-fetchCabalFile :: Cfg -> PackageName -> Version -> IO ()
-fetchCabalFile c (PackageName pn) v = do
+fetchCabalFile :: PackageName -> Version -> HPM ()
+fetchCabalFile (PackageName pn) v = do
   let ver = showVersion v
   let uri = getCabalURI (pn,ver)
   let fn  = pn ++ "-" ++ ver
-  putStr $ "Fetching " ++ fn ++ "..."
-  downloadFile uri >>= writeFile ((cfgDbDir c) </> cabal fn)
-  putStrLn "done."
+  liftIO $ putStr $ "Fetching " ++ fn ++ "..."
+  dbdir <- asks cfgDbDir
+  liftIO $ downloadFile uri >>= writeFile (dbdir </> cabal fn)
+  liftIO $ putStrLn "done."
 
 resetDirectory :: FilePath -> IO ()
 resetDirectory dir = do
   removeDirectoryRecursive dir
   createDirectoryIfMissing True dir
 
-downloadCabalFiles :: Cfg -> [(PackageName,Category,Version)] -> HDM -> IO ()
-downloadCabalFiles c ports hdm = do
-  resetDirectory (cfgDbDir c)
+downloadCabalFiles :: Ports -> HDM -> HPM ()
+downloadCabalFiles (Ports ports) hdm = do
+  dbdir <- asks cfgDbDir
+  liftIO $ resetDirectory dbdir
   forM_ ports $ \(p,_,v) -> do
     forM_ (filter (>= v) $ hdm ! p) $ \v ->
-      fetchCabalFile c p v
+      fetchCabalFile p v
 
-cachePortVersions :: Cfg -> IO ()
-cachePortVersions c = do
-  let portsDir = cfgPortsDir c
+cachePortVersions :: HPM ()
+cachePortVersions = do
+  portsDir <- asks cfgPortsDir
   let mk = portsDir </> bsdHackageMk
-  contents <- (normalize . DT.lines . DT.pack) <$> readFile mk
+  contents <- liftIO $ (normalize . DT.lines . DT.pack) <$> readFile mk
   versions <- forM (map (DT.unpack . (!! 1) . DT.words) contents) $ \d -> do
-    c <- readFile $ portsDir </> d </> mkfile
+    port <- liftIO $ readFile $ portsDir </> d </> mkfile
     let cat = takeDirectory d
-    let k = filter (not . null) . map words . lines $ c
+    let k = filter (not . null) . map words . lines $ port
     let pnLine = head $ filter ((== "PORTNAME=") . head) k
     let pvLine = head $ filter ((== "PORTVERSION=") . head) k
     return $ unwords [pnLine !! 1, cat, pvLine !! 1]
-  writeFile portVersionsFile $ unlines versions
+  liftIO $ writeFile portVersionsFile $ unlines versions
 
 cacheHackageDB :: IO ()
 cacheHackageDB = downloadFile hackageLogURI >>= writeFile hackageLog
 
-cacheDB :: Cfg -> IO ()
-cacheDB c = do
+cacheDB :: HPM ()
+cacheDB = do
   ports <- getPortVersions portVersionsFile
-  let baselibs = Distribution.FreeBSD.Update.getBaseLibs (cfgPlatform c)
-  hdm <- buildHackageDatabase hackageLog baselibs
-  downloadCabalFiles c ports hdm
+  hdm <- buildHackageDatabase hackageLog
+  downloadCabalFiles ports hdm
 
-cache :: Cfg -> IO ()
-cache c = do
-  putStrLn "Colllecting:"
-  putStr "Port information..."
-  cachePortVersions c
-  putStrLn "done."
-  putStr "HackageDB information..."
-  cacheHackageDB
-  putStrLn "done."
-  putStr "Cabal package descriptions..."
-  cacheDB c
-  putStrLn "done."
+cache :: HPM ()
+cache = do
+  liftIO $ do
+    putStrLn "Colllecting:"
+    putStr "Port information..."
+  cachePortVersions
+  liftIO $ do
+    putStrLn "done."
+    putStr "HackageDB information..."
+    cacheHackageDB
+    putStrLn "done."
+    putStr "Cabal package descriptions..."
+  cacheDB
+  liftIO $ putStrLn "done."
 
-downloadUpdates :: Cfg -> IO ()
-downloadUpdates c = do
-  let updatesDir = cfgUpdatesDir c
-  putStrLn "Update starts."
-  removeDirectoryRecursive updatesDir
-  createDirectoryIfMissing True updatesDir
-  (hdm,cpm,vcm,ports) <- initialize c
-  forM_ (learnUpdates hdm cpm vcm ports c) $
+downloadUpdates :: HPM ()
+downloadUpdates = do
+  updatesDir <- asks cfgUpdatesDir
+  liftIO $ do
+    putStrLn "Update starts."
+    removeDirectoryRecursive updatesDir
+    createDirectoryIfMissing True updatesDir
+  (hdm,cpm,vcm,ports) <- initialize
+  dbdir <- asks cfgDbDir
+  updates <- learnUpdates hdm cpm vcm ports
+  forM_ updates $
     \(p@(PackageName pn),Category ct,v,v1,_,_) -> do
       let [v',v1'] = showVersion <$> [v,v1]
       when (v < v1) $ do
-        putStr $ printf "Updating port for %s (%s) (%s -> %s)..." pn ct v' v1'
-        dump <- readFile $ (cfgDbDir c) </> cabal (pn ++ "-" ++ v1')
-        (ppath,port) <- buildPort (cfgBuildOpts c) dump (Just ct)
-        createPortFiles (updatesDir </> ppath) port
-        putStrLn "done."
-  putStrLn "Update finished."
+        buildopts <- asks cfgBuildOpts
+        liftIO $ do
+          putStr $ printf "Updating port for %s (%s) (%s -> %s)..." pn ct v' v1'
+          dump <- readFile $ dbdir </> cabal (pn ++ "-" ++ v1')
+          (ppath,port) <- buildPort buildopts dump (Just ct)
+          createPortFiles (updatesDir </> ppath) port
+          putStrLn "done."
+  liftIO $ putStrLn "Update finished."
 
-checkCfg :: (Cfg -> IO ()) -> IO ()
-checkCfg block = do
+runCfg :: HPM () -> IO ()
+runCfg block = do
   haveCfg <- doesFileExist cfg
   if haveCfg
-    then getConfiguration cfg >>= block
+    then getConfiguration cfg >>= runReaderT (unHPM block)
     else putStrLn $ printf "No \"%s\" found.  Aborting." cfg
 
 [getPlatformConf,getGhcConf,getCategoriesConf] =
@@ -142,38 +151,37 @@ checkCfg block = do
 #endif
 
 cmdPrintUpdates :: IO ()
-cmdPrintUpdates = checkCfg $ \c -> do
-  showUpdates c >>= putStrLn
+cmdPrintUpdates = runCfg $ showUpdates >>= fmap liftIO putStrLn
 
 cmdDownloadUpdates :: IO ()
-cmdDownloadUpdates = checkCfg downloadUpdates
+cmdDownloadUpdates = runCfg downloadUpdates
 
 cmdUpdatePortVersions :: IO ()
-cmdUpdatePortVersions = checkCfg cachePortVersions
+cmdUpdatePortVersions = runCfg cachePortVersions
 
 cmdGetLatestHackageVersions :: IO ()
-cmdGetLatestHackageVersions = checkCfg $ \c -> do
-  cacheHackageDB
-  ports <- getPortVersions portVersionsFile
-  let baselibs = Distribution.FreeBSD.Update.getBaseLibs (cfgPlatform c)
-  hdm <- buildHackageDatabase hackageLog baselibs
-  resetDirectory (cfgDbDir c)
+cmdGetLatestHackageVersions = runCfg $ do
+  liftIO $ cacheHackageDB
+  Ports ports <- getPortVersions portVersionsFile
+  hdm <- buildHackageDatabase hackageLog
+  dbdir <- asks cfgDbDir
+  liftIO $ resetDirectory dbdir
   forM_ ports $ \(p@(PackageName pn),_,v) -> do
     let available = filter (>= v) $ hdm ! p
     if (not . null $ available)
       then do
         let latest = maximum available
-        fetchCabalFile c p latest
-      else do
+        fetchCabalFile p latest
+      else liftIO $ do
         putStrLn $ "Cannot be get: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
 
 cmdFetchCabal :: String -> String -> IO ()
-cmdFetchCabal name version = checkCfg $ \c -> do
-  let dbDir = cfgDbDir c
-  files <- filter (f name) <$> getDirectoryContents dbDir
-  mapM_ removeFile $ map (dbDir </>) files
-  fetchCabalFile c (PackageName name) (toVersion version)
+cmdFetchCabal name version = runCfg $ do
+  dbDir <- asks cfgDbDir
+  files <- liftIO $ filter (f name) <$> getDirectoryContents dbDir
+  liftIO $ mapM_ removeFile $ map (dbDir </>) files
+  fetchCabalFile (PackageName name) (toVersion version)
   where
     f r x
       | null l    = False
@@ -182,34 +190,36 @@ cmdFetchCabal name version = checkCfg $ \c -> do
         l = snd . break (== '-') . reverse $ x
 
 cmdPrintCabalVersions :: String -> IO ()
-cmdPrintCabalVersions name = checkCfg $ \c -> do
-  let baselibs = Distribution.FreeBSD.Update.getBaseLibs (cfgPlatform c)
-  hdm <- buildHackageDatabase hackageLog baselibs
+cmdPrintCabalVersions name = runCfg $ do
+  hdm <- buildHackageDatabase hackageLog
   let versions = intercalate ", " $ showVersion <$> hdm ! (PackageName name)
-  putStrLn versions
+  liftIO $ putStrLn versions
 
 cmdIsVersionAllowed :: String -> String -> IO ()
-cmdIsVersionAllowed name version = checkCfg $ \c -> do
-  (hdm,cpm,vcm,_) <- initialize c
-  let (rs,dp)     = isVersionAllowed hdm cpm vcm c pk
+cmdIsVersionAllowed name version = runCfg $ do
+  (hdm,cpm,vcm,_) <- initialize
+  (rs,dp) <- isVersionAllowed hdm cpm vcm pk
   let restricted  = [ p | ((PackageName p,_),_) <- rs ]
   let unsatisfied = [ d | (PackageName d,_) <- dp ]
-  when (not . null $ restricted) $
-    putStrLn $ "Restricted by:  " ++ intercalate ", " restricted
-  when (not . null $ unsatisfied) $
-    putStrLn $ "Unsatisfied by: " ++ intercalate ", " unsatisfied
-  when (null restricted && null unsatisfied) $
-    putStrLn "OK!"
+  liftIO $ do
+    when (not . null $ restricted) $
+      putStrLn $ "Restricted by:  " ++ intercalate ", " restricted
+    when (not . null $ unsatisfied) $
+      putStrLn $ "Unsatisfied by: " ++ intercalate ", " unsatisfied
+    when (null restricted && null unsatisfied) $
+      putStrLn "OK!"
   where
     pk = (PackageName name, toVersion version)
 
-body :: Cfg -> IO ()
-body c = do
-  cache c
-  putStrLn "== Port Status Overview =="
-  showUpdates c >>= putStrLn
-  putStrLn "== Actual Updates =="
-  downloadUpdates c
+body :: HPM ()
+body = do
+  cache
+  updates <- showUpdates
+  liftIO $ do
+    putStrLn "== Port Status Overview =="
+    putStrLn updates
+    putStrLn "== Actual Updates =="
+  downloadUpdates
 
 cfg :: FilePath
 cfg = "hsupdater.conf"
@@ -218,5 +228,5 @@ main :: IO ()
 main = do
   haveCfg <- doesFileExist cfg
   if haveCfg
-    then checkCfg body
+    then runCfg body
     else putStrLn $ printf "No \"%s\" found.  Aborting." cfg

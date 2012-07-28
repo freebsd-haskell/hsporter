@@ -1,5 +1,7 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Distribution.FreeBSD.Common where
 
+import Control.Monad.Reader
 import qualified Data.Map as DM
 import Data.Version
 import Distribution.Package
@@ -33,6 +35,12 @@ data Cfg = Cfg
   , cfgBuildOpts  :: BuildOpts
   , cfgBaseLibs   :: [(PackageName,Version)]
   }
+
+-- "HsPorter Monad" (stack)
+newtype HPM a = HPM {
+    unHPM :: ReaderT Cfg IO a
+  }
+  deriving (Functor,Monad,MonadIO,MonadReader Cfg)
 
 hackageURI :: String
 hackageURI = "http://hackage.haskell.org/packages/archive/"

@@ -3,6 +3,7 @@ module Distribution.FreeBSD.Update where
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
+import Control.Monad.Reader
 import Data.Char
 import Data.Function
 import Data.List
@@ -58,9 +59,15 @@ getHackageDescription (PackageName p,v) = do
   ParseOk _ gpkg <- return $ parsePackageDescription dump
   return gpkg
 
-buildHackageDatabase :: FilePath -> [(PackageName,Version)] -> IO HDM
-buildHackageDatabase log core = do
-  entries <- map extractEntry . DT.lines . DT.pack <$> readFile log
+
+buildHackageDatabase :: FilePath -> HPM HDM
+buildHackageDatabase log = do
+  core <- asks cfgBaseLibs
+  entries <- liftIO $ map extractEntry . DT.lines . DT.pack <$> readFile log
+  let retainCoreVersion pk@(pn,_) =
+        case (lookup pn core) of
+          Just v  -> (pn,[v])
+          Nothing -> pk
   return $
     DM.fromList $ map retainCoreVersion $ map (packName &&& versions) $
     prepare entries
@@ -75,21 +82,19 @@ buildHackageDatabase log core = do
         (n:v:_) = reverseTake 2 . DT.words $ line
         reverseTake n l = drop ((length l) - n) l
 
-    retainCoreVersion pk@(pn,_) =
-      case (lookup pn core) of
-        Just v  -> (pn,[v])
-        Nothing -> pk
 
-buildCabalDatabase :: FilePath -> IO CPM
-buildCabalDatabase dbdir = do
-  files <- map (dbdir </>) <$> filterDots <$> getDirectoryContents dbdir
+buildCabalDatabase :: HPM CPM
+buildCabalDatabase = do
+  dbdir <- asks cfgDbDir
+  contents <- liftIO $ getDirectoryContents dbdir
+  let files = map (dbdir </>) $ filterDots contents
   entries <- mapM getEntry files
   return $ DM.fromList entries
   where
     filterDots = filter (flip notElem [".",".."])
 
     getEntry location = do
-      dump <- readFile location
+      dump <- liftIO $ readFile location
       ParseOk _ gpkg <- return $ parsePackageDescription dump
       return $ ((pkgName . pack &&& pkgVersion . pack) &&& id $ gpkg)
       where pack = package . packageDescription
@@ -151,17 +156,17 @@ buildVersionConstraints cpm = sumVersionConstraints cpm . getBaseLibs
 formatPackage :: (String,[Int]) -> (PackageName,Version)
 formatPackage = first PackageName . second (flip Version [])
 
-isVersionAllowed :: HDM -> CPM -> VCM -> Cfg
+isVersionAllowed :: HDM -> CPM -> VCM
   -> (PackageName,Version)
-  -> ([((PackageName,Version),VersionRange)],[(PackageName,VersionRange)])
-isVersionAllowed hdm cpm vcm c i@(p,v) = (constraints,unsatisifed)
+  -> HPM ([((PackageName,Version),VersionRange)],[(PackageName,VersionRange)])
+isVersionAllowed hdm cpm vcm i@(p,v) = do
+  unsatisifed <- unsatisfiedDependencies hdm cpm vcm i
+  return (constraints,unsatisifed)
   where
     constraints =
       case (DM.lookup p vcm) of
         Nothing  -> []
         Just res -> filter (versionFilter hdm cpm vcm i) $ DM.toList res
-
-    unsatisifed = unsatisfiedDependencies hdm cpm vcm c i
 
 versionFilter :: HDM -> CPM -> VCM -> (PackageName,Version)
   -> ((PackageName,Version),VersionRange) -> Bool
@@ -169,41 +174,44 @@ versionFilter hdm cpm vcm (_,v) ((p,pv),vr)
   | not (v `withinRange` vr) = True
   | otherwise                = False
 
-unsatisfiedDependencies :: HDM -> CPM -> VCM -> Cfg
-  -> (PackageName,Version) -> [(PackageName,VersionRange)]
-unsatisfiedDependencies hdm cpm vcm c (p,v) =
-  [ (pn,vr) | Dependency pn vr <- filter f $ getDependencies $ cpm %!% (p,v) ]
-  where
-    f (Dependency pk vr) =
-      case (lookup pk $ cfgBaseLibs c) of
-        Just _  -> False
-        Nothing -> not $ all ((`withinRange` vr)) $ hdm %!% pk
+unsatisfiedDependencies :: HDM -> CPM -> VCM
+  -> (PackageName,Version) -> HPM [(PackageName,VersionRange)]
+unsatisfiedDependencies hdm cpm vcm (p,v) = do
+  baselibs <- asks cfgBaseLibs
+  let f (Dependency pk vr) =
+        case (lookup pk baselibs) of
+          Just _  -> False
+          Nothing -> not $ all ((`withinRange` vr)) $ hdm %!% pk
+  return
+    [ (pn,vr)
+    | Dependency pn vr <- filter f $ getDependencies $ cpm %!% (p,v) ]
 
-getPortVersions :: FilePath -> IO [(PackageName,Category,Version)]
+getPortVersions :: FilePath -> HPM Ports
 getPortVersions fn = do
-  contents <- (map DT.words . DT.lines . DT.pack) <$> readFile fn
-  return $ sort $ (translate . map DT.unpack) <$> contents
+  contents <- (map DT.words . DT.lines . DT.pack) <$> liftIO (readFile fn)
+  return $ Ports $ sort $ (translate . map DT.unpack) <$> contents
   where
     translate (n:c:v:_) = (PackageName n,Category c,toVersion v)
 
-isThereUpdate :: HDM -> CPM -> VCM -> Cfg
+isThereUpdate :: HDM -> CPM -> VCM
   -> (PackageName,Category,Version)
-  -> Maybe (PackageName,Category,Version,Version,[PackageName],[PackageName])
-isThereUpdate hdm cpm vcm c (p,ct,v)
-  | (v /= v') = Just (p,ct,v,v', map (fst . fst) r', map fst d')
-  | otherwise = Nothing
-  where
-    allowed      =
-      versions `zip` (map (isVersionAllowed hdm cpm vcm c) candidates)
-    candidates   = (repeat p) `zip` versions
-    versions     = filter (>= v) $ hdm %!% p
-    (v',(r',d')) = minimumBy (compare `on` f) allowed
-    f (_,(x,y))  = length x + length y
+  -> HPM (Maybe (PackageName,Category,Version,Version,[PackageName],[PackageName]))
+isThereUpdate hdm cpm vcm (p,ct,v) = do
+  let versions     = filter (>= v) $ hdm %!% p
+  let candidates   = (repeat p) `zip` versions
+  checked <- mapM (isVersionAllowed hdm cpm vcm) candidates
+  let allowed      = versions `zip` checked
+  let f (_,(x,y))  = length x + length y
+  let (v',(r',d')) = minimumBy (compare `on` f) allowed
+  return $
+    if (v /= v')
+      then Just (p,ct,v,v', map (fst . fst) r', map fst d')
+      else Nothing
 
-learnUpdates :: HDM -> CPM -> VCM -> Ports -> Cfg
-  -> [(PackageName,Category,Version,Version,[PackageName],[PackageName])]
-learnUpdates hdm cpm vcm (Ports ports) c =
-  mapMaybe (isThereUpdate hdm cpm vcm c) ports
+learnUpdates :: HDM -> CPM -> VCM -> Ports
+  -> HPM [(PackageName,Category,Version,Version,[PackageName],[PackageName])]
+learnUpdates hdm cpm vcm (Ports ports) =
+  fmap catMaybes $ mapM (isThereUpdate hdm cpm vcm) ports
 
 updateLine :: (PackageName,Category,Version,Version,[PackageName],[PackageName])
   -> Maybe String
@@ -223,12 +231,13 @@ updateLine (PackageName p,Category c,v,v1,rs,dp)
     restricts = intercalate ", " [ p | PackageName p <- rs ]
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
 
-initialize :: Cfg -> IO (HDM,CPM,VCM,Ports)
-initialize c = do
-  cpm <- buildCabalDatabase (cfgDbDir c)
+initialize :: HPM (HDM,CPM,VCM,Ports)
+initialize = do
+  cpm <- buildCabalDatabase
   let hdm = getCabalVersions cpm
-  let vcm = buildVersionConstraints cpm (cfgPlatform c)
-  ports <- fmap Ports $ getPortVersions portVersionsFile
+  platform <- asks cfgPlatform
+  let vcm = buildVersionConstraints cpm platform
+  ports <- getPortVersions portVersionsFile
   return $ (hdm,cpm,vcm,ports)
 
 createPortFiles :: FilePath -> Port -> IO ()
