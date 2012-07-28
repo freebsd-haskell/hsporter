@@ -227,8 +227,10 @@ collectPruneableUpdates = do
 cmdShowPruneableUpdates :: IO ()
 cmdShowPruneableUpdates = runCfg $ do
   ps <- collectPruneableUpdates
-  liftIO $
-    putStrLn $ unlines . map (uncurry $ printf "%s: %s\n") $ ps
+  liftIO . putStrLn $
+    if (null ps)
+      then "There are no pruneable updates."
+      else unlines . map (uncurry $ printf "%s: %s\n") $ ps
 
 cmdPruneUpdates :: IO ()
 cmdPruneUpdates = runCfg $ do
