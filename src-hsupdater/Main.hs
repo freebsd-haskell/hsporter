@@ -42,8 +42,7 @@ getConfiguration path = do
 
 showUpdates :: HPM String
 showUpdates = do
-  (hdm,cpm,vcm,ports) <- initialize
-  updates <- learnUpdates hdm cpm vcm ports
+  updates <- initialize >>= learnUpdates
   return . unlines . mapMaybe updateLine $ updates
 
 fetchCabalFile :: PackageName -> Version -> HPM ()
@@ -51,10 +50,11 @@ fetchCabalFile (PackageName pn) v = do
   let ver = showVersion v
   let uri = getCabalURI (pn,ver)
   let fn  = pn ++ "-" ++ ver
-  liftIO $ putStr $ "Fetching " ++ fn ++ "..."
   dbdir <- asks cfgDbDir
-  liftIO $ downloadFile uri >>= writeFile (dbdir </> cabal fn)
-  liftIO $ putStrLn "done."
+  liftIO $ do
+    putStr $ "Fetching " ++ fn ++ "..."
+    downloadFile uri >>= writeFile (dbdir </> cabal fn)
+    putStrLn "done."
 
 resetDirectory :: FilePath -> IO ()
 resetDirectory dir = do
@@ -114,9 +114,8 @@ downloadUpdates = do
     putStrLn "Update starts."
     removeDirectoryRecursive updatesDir
     createDirectoryIfMissing True updatesDir
-  (hdm,cpm,vcm,ports) <- initialize
   dbdir <- asks cfgDbDir
-  updates <- learnUpdates hdm cpm vcm ports
+  updates <- initialize >>= learnUpdates
   forM_ updates $
     \(p@(PackageName pn),Category ct,v,v1,_,_) -> do
       let [v',v1'] = showVersion <$> [v,v1]
@@ -176,8 +175,8 @@ cmdGetLatestHackageVersions = runCfg $ do
         putStrLn $ "Cannot be get: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
 
-cmdFetchCabal :: String -> String -> IO ()
-cmdFetchCabal name version = runCfg $ do
+fetchCabal :: String -> String -> HPM ()
+fetchCabal name version = do
   dbDir <- asks cfgDbDir
   files <- liftIO $ filter (f name) <$> getDirectoryContents dbDir
   liftIO $ mapM_ removeFile $ map (dbDir </>) files
@@ -188,6 +187,9 @@ cmdFetchCabal name version = runCfg $ do
       | otherwise = (reverse $ tail l) == r
       where
         l = snd . break (== '-') . reverse $ x
+
+cmdFetchCabal :: String -> String -> IO ()
+cmdFetchCabal name = runCfg . fetchCabal name
 
 cmdPrintCabalVersions :: String -> IO ()
 cmdPrintCabalVersions name = runCfg $ do
@@ -210,6 +212,28 @@ cmdIsVersionAllowed name version = runCfg $ do
       putStrLn "OK!"
   where
     pk = (PackageName name, toVersion version)
+
+collectPruneableUpdates :: HPM [(String,String)]
+collectPruneableUpdates = do
+  updates <- initialize >>= learnUpdates
+  return $ map refine . filter toPrune $ updates
+  where
+    toPrune (_,_,_,_,[],[])         = False
+    toPrune (_,_,v,v1,_,_) | v < v1 = True
+    toPrune _                       = False
+
+    refine (PackageName p,_,v,_,_,_) = (p,showVersion v)
+
+cmdShowPruneableUpdates :: IO ()
+cmdShowPruneableUpdates = runCfg $ do
+  ps <- collectPruneableUpdates
+  liftIO $
+    putStrLn $ unlines . map (uncurry $ printf "%s: %s\n") $ ps
+
+cmdPruneUpdates :: IO ()
+cmdPruneUpdates = runCfg $ do
+  ps <- collectPruneableUpdates
+  forM_ ps $ \(pn,v) -> fetchCabal pn v
 
 body :: HPM ()
 body = do

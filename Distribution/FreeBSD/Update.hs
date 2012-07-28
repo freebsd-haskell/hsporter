@@ -208,9 +208,9 @@ isThereUpdate hdm cpm vcm (p,ct,v) = do
       then Just (p,ct,v,v', map (fst . fst) r', map fst d')
       else Nothing
 
-learnUpdates :: HDM -> CPM -> VCM -> Ports
+learnUpdates :: (HDM,CPM,VCM,Ports)
   -> HPM [(PackageName,Category,Version,Version,[PackageName],[PackageName])]
-learnUpdates hdm cpm vcm (Ports ports) =
+learnUpdates (hdm,cpm,vcm,Ports ports) =
   fmap catMaybes $ mapM (isThereUpdate hdm cpm vcm) ports
 
 updateLine :: (PackageName,Category,Version,Version,[PackageName],[PackageName])
