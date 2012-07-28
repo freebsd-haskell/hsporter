@@ -172,7 +172,7 @@ cmdGetLatestHackageVersions = runCfg $ do
         let latest = maximum available
         fetchCabalFile p latest
       else liftIO $ do
-        putStrLn $ "Cannot be get: " ++ pn ++ ", " ++ showVersion v
+        putStrLn $ "Cannot be got: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
 
 fetchCabal :: String -> String -> HPM ()
