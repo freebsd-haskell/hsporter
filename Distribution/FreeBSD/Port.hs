@@ -412,11 +412,6 @@ synopsisOf pkgd = synopsis pkgd
 licensingOf :: PackageDescription -> (License,FilePath)
 licensingOf = DP.license &&& DP.licenseFile
 
-data BuildOpts = BuildOpts {
-    baseLibConf     :: FilePath
-  , categoriesConf  :: FilePath
-  }
-
 data Port = Port {
     makefile :: String
   , distinfo :: String

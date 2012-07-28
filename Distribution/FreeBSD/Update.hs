@@ -235,11 +235,11 @@ updateLine (PackageName p,Category c,v,v1,rs,dp)
     restricts = intercalate ", " [ p | PackageName p <- rs ]
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
 
-initialize :: [FilePath] -> Platform -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
-initialize [dbDir,portsDir] platform = do
-  cpm <- buildCabalDatabase dbDir
+initialize :: Cfg -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
+initialize c = do
+  cpm <- buildCabalDatabase (cfgDbDir c)
   let hdm = getCabalVersions cpm
-  let vcm = buildVersionConstraints cpm platform
+  let vcm = buildVersionConstraints cpm (cfgPlatform c)
   ports <- getPortVersions portVersionsFile
   return $ (hdm,cpm,vcm,ports)
 
