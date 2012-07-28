@@ -28,9 +28,11 @@ getConfiguration path = do
   catsConf <- getCategoriesConf
   ghcLibs <- readFile ghcConf
   platLibs <- getPlatformConf >>= readFile
+  let platform = Platform $ ghcLibs ++ platLibs
+  let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   return $
     Cfg (m ! "dbdir") (m ! "portsdir") (m ! "updatesdir")
-        (Platform $ ghcLibs ++ platLibs) (BuildOpts ghcConf catsConf)
+        platform (BuildOpts ghcConf catsConf) baselibs
   where
     formatLine line =
       case (DT.strip <$> DT.splitOn (DT.pack "=") line) of
@@ -40,8 +42,7 @@ getConfiguration path = do
 showUpdates :: Cfg -> IO String
 showUpdates c = do
   (hdm,cpm,vcm,ports) <- initialize c
-  let baselibs = Distribution.FreeBSD.Update.getBaseLibs (cfgPlatform c)
-  let updates = learnUpdates hdm cpm vcm baselibs ports
+  let updates = learnUpdates hdm cpm vcm ports c
   return . unlines . mapMaybe updateLine $ updates
 
 fetchCabalFile :: Cfg -> PackageName -> Version -> IO ()
@@ -109,8 +110,7 @@ downloadUpdates c = do
   removeDirectoryRecursive updatesDir
   createDirectoryIfMissing True updatesDir
   (hdm,cpm,vcm,ports) <- initialize c
-  let baselibs = Distribution.FreeBSD.Update.getBaseLibs (cfgPlatform c)
-  forM_ (learnUpdates hdm cpm vcm baselibs ports) $
+  forM_ (learnUpdates hdm cpm vcm ports c) $
     \(p@(PackageName pn),Category ct,v,v1,_,_) -> do
       let [v',v1'] = showVersion <$> [v,v1]
       when (v < v1) $ do
@@ -190,10 +190,8 @@ cmdPrintCabalVersions name = checkCfg $ \c -> do
 
 cmdIsVersionAllowed :: String -> String -> IO ()
 cmdIsVersionAllowed name version = checkCfg $ \c -> do
-  let platform = cfgPlatform c
   (hdm,cpm,vcm,_) <- initialize c
-  let baselibs    = Distribution.FreeBSD.Update.getBaseLibs platform
-  let (rs,dp)     = isVersionAllowed hdm cpm vcm baselibs pk
+  let (rs,dp)     = isVersionAllowed hdm cpm vcm c pk
   let restricted  = [ p | ((PackageName p,_),_) <- rs ]
   let unsatisfied = [ d | (PackageName d,_) <- dp ]
   when (not . null $ restricted) $

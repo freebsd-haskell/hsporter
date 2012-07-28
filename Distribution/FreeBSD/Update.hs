@@ -23,17 +23,6 @@ import Text.ParserCombinators.ReadP
 import Text.Printf
 import Debug.Trace
 
--- FreeBSD Port Category
-newtype Category = Category String
-  deriving (Show,Eq,Ord)
-
--- "Cabal Package Map"
-type CPM = DM.Map (PackageName,Version) GenericPackageDescription
--- "Version Constraint Map"
-type VCM = DM.Map PackageName (DM.Map (PackageName,Version) VersionRange)
--- "HackageDB Map"
-type HDM = DM.Map PackageName [Version]
-
 (%!%) :: (Show k, Ord k) => DM.Map k a -> k -> a
 m %!% k =
   case (DM.lookup k m) of
@@ -162,17 +151,17 @@ buildVersionConstraints cpm = sumVersionConstraints cpm . getBaseLibs
 formatPackage :: (String,[Int]) -> (PackageName,Version)
 formatPackage = first PackageName . second (flip Version [])
 
-isVersionAllowed :: HDM -> CPM -> VCM -> [(PackageName,Version)]
+isVersionAllowed :: HDM -> CPM -> VCM -> Cfg
   -> (PackageName,Version)
   -> ([((PackageName,Version),VersionRange)],[(PackageName,VersionRange)])
-isVersionAllowed hdm cpm vcm baselibs i@(p,v) = (constraints,unsatisifed)
+isVersionAllowed hdm cpm vcm c i@(p,v) = (constraints,unsatisifed)
   where
     constraints =
       case (DM.lookup p vcm) of
         Nothing  -> []
         Just res -> filter (versionFilter hdm cpm vcm i) $ DM.toList res
 
-    unsatisifed = unsatisfiedDependencies hdm cpm vcm baselibs i
+    unsatisifed = unsatisfiedDependencies hdm cpm vcm c i
 
 versionFilter :: HDM -> CPM -> VCM -> (PackageName,Version)
   -> ((PackageName,Version),VersionRange) -> Bool
@@ -180,13 +169,13 @@ versionFilter hdm cpm vcm (_,v) ((p,pv),vr)
   | not (v `withinRange` vr) = True
   | otherwise                = False
 
-unsatisfiedDependencies :: HDM -> CPM -> VCM -> [(PackageName,Version)]
+unsatisfiedDependencies :: HDM -> CPM -> VCM -> Cfg
   -> (PackageName,Version) -> [(PackageName,VersionRange)]
-unsatisfiedDependencies hdm cpm vcm baselibs (p,v) =
+unsatisfiedDependencies hdm cpm vcm c (p,v) =
   [ (pn,vr) | Dependency pn vr <- filter f $ getDependencies $ cpm %!% (p,v) ]
   where
     f (Dependency pk vr) =
-      case (lookup pk baselibs) of
+      case (lookup pk $ cfgBaseLibs c) of
         Just _  -> False
         Nothing -> not $ all ((`withinRange` vr)) $ hdm %!% pk
 
@@ -197,25 +186,24 @@ getPortVersions fn = do
   where
     translate (n:c:v:_) = (PackageName n,Category c,toVersion v)
 
-isThereUpdate :: HDM -> CPM -> VCM -> [(PackageName,Version)]
+isThereUpdate :: HDM -> CPM -> VCM -> Cfg
   -> (PackageName,Category,Version)
   -> Maybe (PackageName,Category,Version,Version,[PackageName],[PackageName])
-isThereUpdate hdm cpm vcm baselibs (p,c,v)
-  | (v /= v') = Just (p,c,v,v', map (fst . fst) r', map fst d')
+isThereUpdate hdm cpm vcm c (p,ct,v)
+  | (v /= v') = Just (p,ct,v,v', map (fst . fst) r', map fst d')
   | otherwise = Nothing
   where
     allowed      =
-      versions `zip` (map (isVersionAllowed hdm cpm vcm baselibs) candidates)
+      versions `zip` (map (isVersionAllowed hdm cpm vcm c) candidates)
     candidates   = (repeat p) `zip` versions
     versions     = filter (>= v) $ hdm %!% p
     (v',(r',d')) = minimumBy (compare `on` f) allowed
     f (_,(x,y))  = length x + length y
 
-learnUpdates :: HDM -> CPM -> VCM -> [(PackageName,Version)]
-  -> [(PackageName,Category,Version)]
+learnUpdates :: HDM -> CPM -> VCM -> Ports -> Cfg
   -> [(PackageName,Category,Version,Version,[PackageName],[PackageName])]
-learnUpdates hdm cpm vcm baselibs ports =
-  mapMaybe (isThereUpdate hdm cpm vcm baselibs) ports
+learnUpdates hdm cpm vcm (Ports ports) c =
+  mapMaybe (isThereUpdate hdm cpm vcm c) ports
 
 updateLine :: (PackageName,Category,Version,Version,[PackageName],[PackageName])
   -> Maybe String
@@ -235,12 +223,12 @@ updateLine (PackageName p,Category c,v,v1,rs,dp)
     restricts = intercalate ", " [ p | PackageName p <- rs ]
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
 
-initialize :: Cfg -> IO (HDM,CPM,VCM,[(PackageName,Category,Version)])
+initialize :: Cfg -> IO (HDM,CPM,VCM,Ports)
 initialize c = do
   cpm <- buildCabalDatabase (cfgDbDir c)
   let hdm = getCabalVersions cpm
   let vcm = buildVersionConstraints cpm (cfgPlatform c)
-  ports <- getPortVersions portVersionsFile
+  ports <- fmap Ports $ getPortVersions portVersionsFile
   return $ (hdm,cpm,vcm,ports)
 
 createPortFiles :: FilePath -> Port -> IO ()
