@@ -150,8 +150,10 @@ sumVersionConstraints :: CPM -> [(PackageName,Version)] -> VCM
 sumVersionConstraints cpm core =
   flip addCoreVersionConstraints core $ getVersionConstraints cpm
 
-buildVersionConstraints :: CPM -> Platform -> VCM
-buildVersionConstraints cpm = sumVersionConstraints cpm . getBaseLibs
+buildVersionConstraints :: CPM -> HPM VCM
+buildVersionConstraints cpm = do
+  baselibs <- fmap getBaseLibs $ asks cfgPlatform
+  return $ sumVersionConstraints cpm baselibs
 
 formatPackage :: (String,[Int]) -> (PackageName,Version)
 formatPackage = first PackageName . second (flip Version [])
@@ -233,11 +235,10 @@ updateLine (PackageName p,Category c,v,v1,rs,dp)
 
 initialize :: HPM (HDM,CPM,VCM,Ports)
 initialize = do
-  cpm <- buildCabalDatabase
+  cpm    <- buildCabalDatabase
   let hdm = getCabalVersions cpm
-  platform <- asks cfgPlatform
-  let vcm = buildVersionConstraints cpm platform
-  ports <- getPortVersions portVersionsFile
+  vcm    <- buildVersionConstraints cpm
+  ports  <- getPortVersions portVersionsFile
   return $ (hdm,cpm,vcm,ports)
 
 createPortFiles :: FilePath -> Port -> IO ()
