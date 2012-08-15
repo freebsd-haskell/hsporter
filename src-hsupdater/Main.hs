@@ -188,8 +188,17 @@ fetchCabal name version = do
       where
         l = snd . break (== '-') . reverse $ x
 
+fetchLatestCabal :: String -> HPM ()
+fetchLatestCabal name = do
+  hdm <- buildHackageDatabase hackageLog
+  let versions = hdm ! (PackageName name)
+  fetchCabal name (showVersion $ last versions)
+
 cmdFetchCabal :: String -> String -> IO ()
 cmdFetchCabal name = runCfg . fetchCabal name
+
+cmdFetchLatestCabal :: String -> IO ()
+cmdFetchLatestCabal = runCfg . fetchLatestCabal
 
 cmdPrintCabalVersions :: String -> IO ()
 cmdPrintCabalVersions name = runCfg $ do
