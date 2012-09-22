@@ -174,6 +174,24 @@ cmdGetLatestHackageVersions = runCfg $ do
       else liftIO $ do
         putStrLn $ "Cannot be got: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
+  core <- asks cfgBaseLibs
+  cpm <- buildCabalDatabase
+  new <- fmap (nub . concat) $ forM (DM.toList cpm) $ \(_,gpkgd) -> do
+    return $
+      forM (getDependencies gpkgd) (\(Dependency pk _) -> do
+        if (pk `elem` [name | (name,_) <- core])
+          then return Nothing
+          else do
+            let available = hdm %!% pk
+            let versions  = repeat pk `zip` available
+            return $
+              case (catMaybes $ flip DM.lookup cpm <$> versions) of
+                [] -> Just (pk, maximum available)
+                _  -> Nothing)
+      >>= catMaybes
+  when (not . null $ new) $ do
+    liftIO $ putStrLn "Fetching new dependencies..."
+    forM_ new $ uncurry fetchCabalFile
 
 fetchCabal :: String -> String -> HPM ()
 fetchCabal name version = do
