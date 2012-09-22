@@ -257,7 +257,7 @@ cmdShowPruneableUpdates = runCfg $ do
   liftIO . putStrLn $
     if (null ps)
       then "There are no pruneable updates."
-      else unlines . map (uncurry $ printf "%s: %s\n") $ ps
+      else unlines . map (uncurry $ printf "%s: %s") $ ps
 
 cmdPruneUpdates :: IO ()
 cmdPruneUpdates = runCfg $ do
