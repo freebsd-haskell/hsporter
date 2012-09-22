@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Distribution.FreeBSD.Common
 import Distribution.FreeBSD.Port
 import System.Directory
 import System.Environment
