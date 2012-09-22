@@ -324,12 +324,7 @@ executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
 makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> CalendarTime -> [String] -> String
 makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
   = unlines $
-    [ "# New ports collection makefile for: " ++ fullNameOf pkgd
-    , "# Date created:        " ++ fmt timestamp
-    , "# Whom:                haskell@FreeBSD.org"
-    , "#"
-    , "# $FreeBSD$"
-    , "#"
+    [ "# $FreeBSD$"
     , ""
     , portname $ nameOf pkgd
     , portversion $ versionOf pkgd
