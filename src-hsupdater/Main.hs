@@ -4,6 +4,7 @@ module Main where
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.Error
 import qualified Data.Map as DM
 import Data.Map ((!))
 import Data.Maybe
@@ -133,7 +134,7 @@ runCfg :: HPM () -> IO ()
 runCfg block = do
   haveCfg <- doesFileExist cfg
   if haveCfg
-    then getConfiguration cfg >>= runReaderT (unHPM block)
+    then getConfiguration cfg >>= runHPM block
     else putStrLn $ printf "No \"%s\" found.  Aborting." cfg
 
 [getPlatformConf,getGhcConf,getCategoriesConf] =

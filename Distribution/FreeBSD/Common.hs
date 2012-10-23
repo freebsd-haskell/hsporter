@@ -2,6 +2,7 @@
 module Distribution.FreeBSD.Common where
 
 import Control.Monad.Reader
+import Control.Monad.Error
 import qualified Data.Map as DM
 import Data.Version
 import Distribution.Package
@@ -38,9 +39,18 @@ data Cfg = Cfg
 
 -- "HsPorter Monad" (stack)
 newtype HPM a = HPM {
-    unHPM :: ReaderT Cfg IO a
+    unHPM :: ErrorT String (ReaderT Cfg IO) a
   }
   deriving (Functor,Monad,MonadIO,MonadReader Cfg)
+
+runHPM :: HPM a -> Cfg -> IO ()
+runHPM h c = do
+  result <- run h c
+  case result of
+    Left str  -> putStrLn $ "Error: " ++ str
+    Right _   -> return ()
+  where
+    run = runReaderT . runErrorT . unHPM
 
 hackageURI :: String
 hackageURI = "http://hackage.haskell.org/packages/archive/"

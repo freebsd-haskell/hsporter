@@ -94,10 +94,14 @@ buildCabalDatabase = do
     filterDots = filter (flip notElem [".",".."])
 
     getEntry location = do
+      let pack = package . packageDescription
+      let file = takeFileName location
       dump <- liftIO $ readFile location
-      ParseOk _ gpkg <- return $ parsePackageDescription dump
-      return $ ((pkgName . pack &&& pkgVersion . pack) &&& id $ gpkg)
-      where pack = package . packageDescription
+      result <- return $ parsePackageDescription dump
+      case result of
+        ParseOk _ gpkg ->
+          return $ ((pkgName . pack &&& pkgVersion . pack) &&& id $ gpkg)
+        _ -> fail $ printf "Could not parse description for \"%s\"." file
 
 getCabalVersions :: CPM -> HDM
 getCabalVersions =
