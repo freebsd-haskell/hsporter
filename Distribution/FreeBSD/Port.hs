@@ -123,7 +123,7 @@ licenseText tgz name
             NormalFile cts _ = entryContent x
 
 www :: String -> String
-www url = "WWW:\t" ++ url
+www url = "WWW: " ++ url
 
 maintainer :: String -> String
 maintainer m = "MAINTAINER=\t" ++ m
