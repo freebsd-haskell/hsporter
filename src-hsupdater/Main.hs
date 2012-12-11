@@ -5,6 +5,8 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.Error
+import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Data.Map as DM
 import Data.Map ((!))
 import Data.Maybe
@@ -16,6 +18,7 @@ import Distribution.FreeBSD.Update
 import Distribution.Package
 import System.Directory
 import System.FilePath.Posix
+import System.IO
 import Text.Printf
 #ifdef STANDALONE
 import Paths_hsporter
@@ -35,6 +38,7 @@ getConfiguration path = do
   return $
     Cfg (m ! "dbdir") (m ! "portsdir") (m ! "updatesdir")
         platform (BuildOpts ghcConf catsConf) baselibs
+        (read $ m ! "threads")
   where
     formatLine line =
       case (DT.strip <$> DT.splitOn (DT.pack "=") line) of
@@ -47,15 +51,19 @@ showUpdates = do
   return . unlines . mapMaybe updateLine $ updates
 
 fetchCabalFile :: PackageName -> Version -> HPM ()
-fetchCabalFile (PackageName pn) v = do
+fetchCabalFile p@(PackageName pn) v = do
+  let fn = pn ++ "-" ++ (showVersion v)
+  liftIO $ putStr $ "Fetching " ++ fn ++ "..."
+  fetchCabalFile' p v 
+  liftIO $ putStrLn "done."
+
+fetchCabalFile' :: PackageName -> Version -> HPM ()
+fetchCabalFile' (PackageName pn) v = do
   let ver = showVersion v
   let uri = getCabalURI (pn,ver)
   let fn  = pn ++ "-" ++ ver
   dbdir <- asks cfgDbDir
-  liftIO $ do
-    putStr $ "Fetching " ++ fn ++ "..."
-    downloadFile uri >>= writeFile (dbdir </> cabal fn)
-    putStrLn "done."
+  liftIO $ downloadFile uri >>= writeFile (dbdir </> cabal fn)
 
 resetDirectory :: FilePath -> IO ()
 resetDirectory dir = do
@@ -159,22 +167,72 @@ cmdDownloadUpdates = runCfg downloadUpdates
 cmdUpdatePortVersions :: IO ()
 cmdUpdatePortVersions = runCfg cachePortVersions
 
+data Task = Fetch PackageName Version | Done
+
+displayFetchedFiles :: TChan (PackageName,Version) -> IO ()
+displayFetchedFiles c =
+  forever $ do
+    (PackageName pn,v) <- atomically (readTChan c)
+    putStrLn $ "Fetched: " ++ pn ++ "-" ++ (showVersion v)
+    hFlush stdout
+
+worker :: TChan (PackageName,Version) -> TChan Task -> HPM ()
+worker fetched queue = loop
+  where
+    loop = do
+      job <- liftIO . atomically $ readTChan queue
+      case job of
+        Done      -> return ()
+        Fetch p v -> do
+          fetchCabalFile' p v
+          liftIO . atomically $ writeTChan fetched (p,v)
+          loop
+
+modifyTVar_ :: TVar a -> (a -> a) -> STM ()
+modifyTVar_ tv f = readTVar tv >>= writeTVar tv . f
+
+forkTimes :: Int -> Cfg -> TVar Int -> HPM () -> IO ()
+forkTimes k cfg alive act =
+  replicateM_ k . forkIO $ do
+    runHPM act cfg
+    (atomically $ modifyTVar_ alive (subtract 1))
+
+parFetchFiles :: [(PackageName,Version)] -> HPM ()
+parFetchFiles queue = do
+  cfg <- ask
+  let k = cfgThreads cfg
+  fetched <- liftIO $ newTChanIO
+  jobs    <- liftIO $ newTChanIO
+  workers <- liftIO $ newTVarIO k
+  liftIO $ do
+    forkIO (displayFetchedFiles fetched)
+    forkTimes k cfg workers (worker fetched jobs)
+    atomically $ forM_ queue $ \(p,v) -> do
+      writeTChan jobs (Fetch p v)
+    atomically $ replicateM_ k (writeTChan jobs Done)
+    atomically $ do
+      running <- readTVar workers
+      check (running == 0)
+
 cmdGetLatestHackageVersions :: IO ()
 cmdGetLatestHackageVersions = runCfg $ do
+  liftIO $ putStrLn "Initializing..."
   liftIO $ cacheHackageDB
   Ports ports <- getPortVersions portVersionsFile
   hdm <- buildHackageDatabase hackageLog
   dbdir <- asks cfgDbDir
   liftIO $ resetDirectory dbdir
-  forM_ ports $ \(p@(PackageName pn),_,v) -> do
+  queue <- fmap catMaybes $ forM ports $ \(p@(PackageName pn),_,v) -> do
     let available = filter (>= v) $ hdm ! p
     if (not . null $ available)
-      then do
-        let latest = maximum available
-        fetchCabalFile p latest
+      then
+        return $ Just (p, maximum available)
       else liftIO $ do
         putStrLn $ "Cannot be got: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
+        return Nothing
+  liftIO $ putStrLn "Fetching new versions..."
+  parFetchFiles queue
   core <- asks cfgBaseLibs
   cpm <- buildCabalDatabase
   new <- fmap (nub . concat) $ forM (DM.toList cpm) $ \(_,gpkgd) -> do
@@ -192,7 +250,7 @@ cmdGetLatestHackageVersions = runCfg $ do
       >>= catMaybes
   when (not . null $ new) $ do
     liftIO $ putStrLn "Fetching new dependencies..."
-    forM_ new $ uncurry fetchCabalFile
+    parFetchFiles new
 
 fetchCabal :: String -> String -> HPM ()
 fetchCabal name version = do

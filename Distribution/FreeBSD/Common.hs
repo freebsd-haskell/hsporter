@@ -35,6 +35,7 @@ data Cfg = Cfg
   , cfgPlatform   :: Platform
   , cfgBuildOpts  :: BuildOpts
   , cfgBaseLibs   :: [(PackageName,Version)]
+  , cfgThreads    :: Int
   }
 
 -- "HsPorter Monad" (stack)

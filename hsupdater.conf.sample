@@ -1,3 +1,4 @@
 dbdir=db
 updatesdir=updates
 portsdir=root_of_freebsd-haskell_tree
+threads=4
