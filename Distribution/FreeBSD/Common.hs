@@ -8,6 +8,7 @@ import Data.Version
 import Distribution.Package
 import Distribution.PackageDescription
 import Distribution.Version
+import Text.Printf
 
 -- FreeBSD Port Category
 newtype Category = Category String
@@ -37,6 +38,15 @@ data Cfg = Cfg
   , cfgBaseLibs   :: [(PackageName,Version)]
   , cfgThreads    :: Int
   }
+
+newtype PortUpdate =
+  PU (PackageName,Category,Version,Version,[PackageName],[PackageName])
+
+instance Show PortUpdate where
+  show (PU (PackageName pn,Category ct,v,v1,_,_)) =
+    printf "%s (%s) (%s -> %s)" pn ct v' v1'
+    where
+      [v',v1'] = fmap showVersion [v,v1]
 
 -- "HsPorter Monad" (stack)
 newtype HPM a = HPM {

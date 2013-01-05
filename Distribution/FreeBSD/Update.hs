@@ -199,9 +199,8 @@ getPortVersions fn = do
   where
     translate (n:c:v:_) = (PackageName n,Category c,toVersion v)
 
-isThereUpdate :: HDM -> CPM -> VCM
-  -> (PackageName,Category,Version)
-  -> HPM (Maybe (PackageName,Category,Version,Version,[PackageName],[PackageName]))
+isThereUpdate :: HDM -> CPM -> VCM -> (PackageName,Category,Version)
+  -> HPM (Maybe PortUpdate)
 isThereUpdate hdm cpm vcm (p,ct,v) = do
   let versions     = filter (>= v) $ hdm %!% p
   let candidates   = (repeat p) `zip` versions
@@ -211,17 +210,15 @@ isThereUpdate hdm cpm vcm (p,ct,v) = do
   let (v',(r',d')) = minimumBy (compare `on` f) allowed
   return $
     if (v /= v')
-      then Just (p,ct,v,v', map (fst . fst) r', map fst d')
+      then Just $ PU (p,ct,v,v', map (fst . fst) r', map fst d')
       else Nothing
 
-learnUpdates :: (HDM,CPM,VCM,Ports)
-  -> HPM [(PackageName,Category,Version,Version,[PackageName],[PackageName])]
+learnUpdates :: (HDM,CPM,VCM,Ports) -> HPM [PortUpdate]
 learnUpdates (hdm,cpm,vcm,Ports ports) =
   fmap catMaybes $ mapM (isThereUpdate hdm cpm vcm) ports
 
-updateLine :: (PackageName,Category,Version,Version,[PackageName],[PackageName])
-  -> Maybe String
-updateLine (PackageName p,Category c,v,v1,rs,dp)
+updateLine :: PortUpdate -> Maybe String
+updateLine (PU (PackageName p,Category c,v,v1,rs,dp))
   | v < v1 && null rs && null dp = Just $
     printf "%-32s %-12s ---> %-12s" port v' v1'
   | v < v1 && null rs = Just $

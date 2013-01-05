@@ -113,6 +113,17 @@ cache = do
   cacheDB
   liftIO $ putStrLn "done."
 
+fetchPort :: PortUpdate -> HPM ()
+fetchPort (PU (p@(PackageName pn),Category ct,v,v1,_,_)) =
+  when (v < v1) $ do
+    buildopts <- asks cfgBuildOpts
+    dbdir <- asks cfgDbDir
+    updatesDir <- asks cfgUpdatesDir
+    liftIO $ do
+      dump <- readFile $ dbdir </> cabal (show $ PV (p,v1))
+      (ppath,port) <- buildPort buildopts dump (Just ct)
+      createPortFiles (updatesDir </> ppath) port
+
 downloadUpdates :: HPM ()
 downloadUpdates = do
   updatesDir <- asks cfgUpdatesDir
@@ -120,19 +131,7 @@ downloadUpdates = do
     putStrLn "Update starts."
     removeDirectoryRecursive updatesDir
     createDirectoryIfMissing True updatesDir
-  dbdir <- asks cfgDbDir
-  updates <- initialize >>= learnUpdates
-  forM_ updates $
-    \(p@(PackageName pn),Category ct,v,v1,_,_) -> do
-      let [v',v1'] = showVersion <$> [v,v1]
-      when (v < v1) $ do
-        buildopts <- asks cfgBuildOpts
-        liftIO $ do
-          putStr $ printf "Updating port for %s (%s) (%s -> %s)..." pn ct v' v1'
-          dump <- readFile $ dbdir </> cabal (pn ++ "-" ++ v1')
-          (ppath,port) <- buildPort buildopts dump (Just ct)
-          createPortFiles (updatesDir </> ppath) port
-          putStrLn "done."
+  initialize >>= learnUpdates >>= parallel "Downloaded: %s" fetchPort
   liftIO $ putStrLn "Update finished."
 
 runCfg :: HPM () -> IO ()
@@ -306,11 +305,11 @@ collectPruneableUpdates = do
   updates <- initialize >>= learnUpdates
   return $ map refine . filter toPrune $ updates
   where
-    toPrune (_,_,_,_,[],[])         = False
-    toPrune (_,_,v,v1,_,_) | v < v1 = True
-    toPrune _                       = False
+    toPrune (PU (_,_,_,_,[],[]))         = False
+    toPrune (PU (_,_,v,v1,_,_)) | v < v1 = True
+    toPrune _                            = False
 
-    refine (p,_,v,_,_,_) = PV (p,v)
+    refine (PU (p,_,v,_,_,_)) = PV (p,v)
 
 cmdShowPruneableUpdates :: IO ()
 cmdShowPruneableUpdates = runCfg $ do
