@@ -50,20 +50,17 @@ showUpdates = do
   updates <- initialize >>= learnUpdates
   return . unlines . mapMaybe updateLine $ updates
 
-fetchCabalFile :: PackageName -> Version -> HPM ()
-fetchCabalFile p@(PackageName pn) v = do
-  let fn = pn ++ "-" ++ (showVersion v)
-  liftIO $ putStr $ "Fetching " ++ fn ++ "..."
-  fetchCabalFile' p v 
+fetchCabalFile :: PV -> HPM ()
+fetchCabalFile pv = do
+  liftIO $ putStr (show pv)
+  fetchCabalFile' pv
   liftIO $ putStrLn "done."
 
-fetchCabalFile' :: PackageName -> Version -> HPM ()
-fetchCabalFile' (PackageName pn) v = do
-  let ver = showVersion v
-  let uri = getCabalURI (pn,ver)
-  let fn  = pn ++ "-" ++ ver
+fetchCabalFile' :: PV -> HPM ()
+fetchCabalFile' pv@(PV (PackageName pn,v)) = do
+  let uri = getCabalURI (pn,showVersion v)
   dbdir <- asks cfgDbDir
-  liftIO $ downloadFile uri >>= writeFile (dbdir </> cabal fn)
+  liftIO $ downloadFile uri >>= writeFile (dbdir </> cabal (show pv))
 
 resetDirectory :: FilePath -> IO ()
 resetDirectory dir = do
@@ -76,7 +73,7 @@ downloadCabalFiles (Ports ports) hdm = do
   liftIO $ resetDirectory dbdir
   forM_ ports $ \(p,_,v) -> do
     forM_ (filter (>= v) $ hdm ! p) $ \v ->
-      fetchCabalFile p v
+      fetchCabalFile (PV (p,v))
 
 cachePortVersions :: HPM ()
 cachePortVersions = do
@@ -167,25 +164,31 @@ cmdDownloadUpdates = runCfg downloadUpdates
 cmdUpdatePortVersions :: IO ()
 cmdUpdatePortVersions = runCfg cachePortVersions
 
-data Task = Fetch PackageName Version | Done
+data Task a = Do a | Done
 
-displayFetchedFiles :: TChan (PackageName,Version) -> IO ()
-displayFetchedFiles c =
+newtype PV = PV (PackageName,Version)
+  deriving Eq
+
+instance Show PV where
+  show (PV (PackageName n,v)) = printf "%s-%s" n (showVersion v)
+
+displayDone :: Show a => String -> TChan a -> IO ()
+displayDone fmt c =
   forever $ do
-    (PackageName pn,v) <- atomically (readTChan c)
-    putStrLn $ "Fetched: " ++ pn ++ "-" ++ (showVersion v)
+    d <- atomically (readTChan c)
+    putStrLn (printf fmt (show d))
     hFlush stdout
 
-worker :: TChan (PackageName,Version) -> TChan Task -> HPM ()
-worker fetched queue = loop
+worker :: (a -> HPM ()) -> TChan a -> TChan (Task a) -> HPM ()
+worker cmd done queue = loop
   where
     loop = do
       job <- liftIO . atomically $ readTChan queue
       case job of
-        Done      -> return ()
-        Fetch p v -> do
-          fetchCabalFile' p v
-          liftIO . atomically $ writeTChan fetched (p,v)
+        Done  -> return ()
+        Do d  -> do
+          cmd d
+          liftIO . atomically $ writeTChan done d
           loop
 
 modifyTVar_ :: TVar a -> (a -> a) -> STM ()
@@ -197,18 +200,17 @@ forkTimes k cfg alive act =
     runHPM act cfg
     (atomically $ modifyTVar_ alive (subtract 1))
 
-parFetchFiles :: [(PackageName,Version)] -> HPM ()
-parFetchFiles queue = do
+parallel :: Show a => String -> (a -> HPM ()) -> [a] -> HPM ()
+parallel fmt cmd queue = do
   cfg <- ask
   let k = cfgThreads cfg
-  fetched <- liftIO $ newTChanIO
+  done    <- liftIO $ newTChanIO
   jobs    <- liftIO $ newTChanIO
   workers <- liftIO $ newTVarIO k
   liftIO $ do
-    forkIO (displayFetchedFiles fetched)
-    forkTimes k cfg workers (worker fetched jobs)
-    atomically $ forM_ queue $ \(p,v) -> do
-      writeTChan jobs (Fetch p v)
+    forkIO (displayDone fmt done)
+    forkTimes k cfg workers (worker cmd done jobs)
+    atomically $ mapM_ (writeTChan jobs . Do) queue
     atomically $ replicateM_ k (writeTChan jobs Done)
     atomically $ do
       running <- readTVar workers
@@ -226,13 +228,13 @@ cmdGetLatestHackageVersions = runCfg $ do
     let available = filter (>= v) $ hdm ! p
     if (not . null $ available)
       then
-        return $ Just (p, maximum available)
+        return $ Just (PV (p, maximum available))
       else liftIO $ do
         putStrLn $ "Cannot be got: " ++ pn ++ ", " ++ showVersion v
         putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
         return Nothing
   liftIO $ putStrLn "Fetching new versions..."
-  parFetchFiles queue
+  parallel "Fetched: %s" fetchCabalFile' queue
   core <- asks cfgBaseLibs
   cpm <- buildCabalDatabase
   new <- fmap (nub . concat) $ forM (DM.toList cpm) $ \(_,gpkgd) -> do
@@ -245,19 +247,19 @@ cmdGetLatestHackageVersions = runCfg $ do
             let versions  = repeat pk `zip` available
             return $
               case (catMaybes $ flip DM.lookup cpm <$> versions) of
-                [] -> Just (pk, maximum available)
+                [] -> Just (PV (pk, maximum available))
                 _  -> Nothing)
       >>= catMaybes
   when (not . null $ new) $ do
     liftIO $ putStrLn "Fetching new dependencies..."
-    parFetchFiles new
+    parallel "Fetched: %s" fetchCabalFile' new
 
-fetchCabal :: String -> String -> HPM ()
-fetchCabal name version = do
+fetchCabal :: PV -> HPM ()
+fetchCabal pv@(PV (p@(PackageName name),version)) = do
   dbDir <- asks cfgDbDir
   files <- liftIO $ filter (f name) <$> getDirectoryContents dbDir
   liftIO $ mapM_ removeFile $ map (dbDir </>) files
-  fetchCabalFile (PackageName name) (toVersion version)
+  fetchCabalFile' pv
   where
     f r x
       | null l    = False
@@ -265,17 +267,17 @@ fetchCabal name version = do
       where
         l = snd . break (== '-') . reverse $ x
 
-fetchLatestCabal :: String -> HPM ()
-fetchLatestCabal name = do
-  hdm <- buildHackageDatabase hackageLog
-  let versions = hdm ! (PackageName name)
-  fetchCabal name (showVersion $ last versions)
-
 cmdFetchCabal :: String -> String -> IO ()
-cmdFetchCabal name = runCfg . fetchCabal name
+cmdFetchCabal n v = do
+  putStr (printf "Fetching %s-%s..." n v)
+  runCfg $ fetchCabal (PV (PackageName n,toVersion v))
+  putStrLn "done."
 
 cmdFetchLatestCabal :: String -> IO ()
-cmdFetchLatestCabal = runCfg . fetchLatestCabal
+cmdFetchLatestCabal n = runCfg $ do
+  hdm <- buildHackageDatabase hackageLog
+  let latest = last $ hdm ! (PackageName n)
+  liftIO $ cmdFetchCabal n (showVersion latest)
 
 cmdPrintCabalVersions :: String -> IO ()
 cmdPrintCabalVersions name = runCfg $ do
@@ -299,7 +301,7 @@ cmdIsVersionAllowed name version = runCfg $ do
   where
     pk = (PackageName name, toVersion version)
 
-collectPruneableUpdates :: HPM [(String,String)]
+collectPruneableUpdates :: HPM [PV]
 collectPruneableUpdates = do
   updates <- initialize >>= learnUpdates
   return $ map refine . filter toPrune $ updates
@@ -308,20 +310,20 @@ collectPruneableUpdates = do
     toPrune (_,_,v,v1,_,_) | v < v1 = True
     toPrune _                       = False
 
-    refine (PackageName p,_,v,_,_,_) = (p,showVersion v)
+    refine (p,_,v,_,_,_) = PV (p,v)
 
 cmdShowPruneableUpdates :: IO ()
 cmdShowPruneableUpdates = runCfg $ do
-  ps <- collectPruneableUpdates
+  ps <- liftM (map show) $ collectPruneableUpdates
   liftIO . putStrLn $
     if (null ps)
       then "There are no pruneable updates."
-      else unlines . map (uncurry $ printf "%s: %s") $ ps
+      else unlines ps
 
 cmdPruneUpdates :: IO ()
-cmdPruneUpdates = runCfg $ do
-  ps <- collectPruneableUpdates
-  forM_ ps $ \(pn,v) -> fetchCabal pn v
+cmdPruneUpdates = do
+  putStrLn "Initializing..."
+  runCfg $ collectPruneableUpdates >>= parallel "Pruned: %s" fetchCabal
 
 body :: HPM ()
 body = do
