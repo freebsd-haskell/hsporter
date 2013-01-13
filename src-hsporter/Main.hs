@@ -3,10 +3,12 @@ module Main where
 import Control.Monad
 import Distribution.FreeBSD.Common
 import Distribution.FreeBSD.Port
+import Distribution.Package
 import System.Directory
 import System.Environment
 import System.Exit
 import System.FilePath.Posix
+import Text.Printf
 import Paths_hsporter
 
 printUsage :: IO ()
@@ -22,12 +24,12 @@ main = do
   args <- getArgs
   when (length args < 1) printUsage
   url <- return $ head args
-  putStrLn $ "Fetching " ++ url ++ "..."
+  printf "Fetching %s...\n" url
   dump <- getDescription url
   let category | (length args > 1) = Just $ args !! 1
                | otherwise         = Nothing
   (dir,port) <- buildPort opts dump category
-  putStrLn $ "Building port in " ++ dir ++ "..."
+  printf "Building port in %s...\n" dir
   createDirectoryIfMissing True dir
   putStr "Conversion in progress... ["
   writeFile (dir </> "Makefile") (makefile port)
@@ -37,5 +39,11 @@ main = do
   writeFile (dir </> "pkg-descr") (pkgDescr port)
   putStr $ sep "pkg-descr"
   putStrLn $ " ]"
-  putStrLn $ "Do not forget to do a 'portlint -C'"
+  let PackageName n = name port
+  putStrLn $ unlines
+    [ "Do not forget to do a 'portlint -C'"
+    , ""
+    , "The corresponding bsd.hackage.mk line is as follows:"
+    , printf "%-32s %s" (printf "%s_port=" n :: String) dir
+    ]
   where sep str = " " ++ str

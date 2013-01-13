@@ -408,7 +408,8 @@ licensingOf :: PackageDescription -> (License,FilePath)
 licensingOf = DP.license &&& DP.licenseFile
 
 data Port = Port {
-    makefile :: String
+    name     :: PackageName
+  , makefile :: String
   , distinfo :: String
   , pkgDescr :: String
   }
@@ -434,6 +435,7 @@ buildPort opts dump (Just category) = do
   return $
     (category </> fullNameOf pkg
     ,Port
+      (pkgName $ package pkg)
       (makefileOf baseLibs lic gpkg category stamp tgzidx)
       (distinfoOf pkg tarball)
       (pkgDescrOf pkg))
