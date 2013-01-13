@@ -217,8 +217,8 @@ learnUpdates :: (HDM,CPM,VCM,Ports) -> HPM [PortUpdate]
 learnUpdates (hdm,cpm,vcm,Ports ports) =
   fmap catMaybes $ mapM (isThereUpdate hdm cpm vcm) ports
 
-updateLine :: PortUpdate -> Maybe String
-updateLine (PU (PackageName p,Category c,v,v1,rs,dp))
+prettyUpdateLine :: PortUpdate -> Maybe String
+prettyUpdateLine (PU (PackageName p,Category c,v,v1,rs,dp))
   | v < v1 && null rs && null dp = Just $
     printf "%-32s %-12s ---> %-12s" port v' v1'
   | v < v1 && null rs = Just $
@@ -233,6 +233,10 @@ updateLine (PU (PackageName p,Category c,v,v1,rs,dp))
     [v',v1']  = showVersion <$> [v,v1]
     restricts = intercalate ", " [ p | PackageName p <- rs ]
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
+
+compactUpdateLine :: PortUpdate -> Maybe String
+compactUpdateLine (PU (PackageName p,Category c,v,v1,rs,dp)) =
+  Just $ printf "%s/hs-%s: %s --> %s" c p (showVersion v) (showVersion v1)
 
 initialize :: HPM (HDM,CPM,VCM,Ports)
 initialize = do

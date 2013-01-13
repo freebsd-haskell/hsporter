@@ -45,10 +45,10 @@ getConfiguration path = do
         (key:val:_) -> Just (DT.unpack . DT.toLower $ key,DT.unpack val)
         _           -> Nothing
 
-showUpdates :: HPM String
-showUpdates = do
+showUpdates :: (PortUpdate -> Maybe String) -> HPM String
+showUpdates format = do
   updates <- initialize >>= learnUpdates
-  return . unlines . mapMaybe updateLine $ updates
+  return . unlines . sort . mapMaybe format $ updates
 
 fetchCabalFile :: PV -> HPM ()
 fetchCabalFile pv = do
@@ -155,7 +155,12 @@ runCfg block = do
 #endif
 
 cmdPrintUpdates :: IO ()
-cmdPrintUpdates = runCfg $ showUpdates >>= fmap liftIO putStrLn
+cmdPrintUpdates = runCfg $
+  showUpdates prettyUpdateLine >>= fmap liftIO putStrLn
+
+cmdPrintUpdateLogs :: IO ()
+cmdPrintUpdateLogs = runCfg $
+  showUpdates compactUpdateLine >>= fmap liftIO putStrLn
 
 cmdDownloadUpdates :: IO ()
 cmdDownloadUpdates = runCfg downloadUpdates
@@ -327,7 +332,7 @@ cmdPruneUpdates = do
 body :: HPM ()
 body = do
   cache
-  updates <- showUpdates
+  updates <- showUpdates prettyUpdateLine
   liftIO $ do
     putStrLn "== Port Status Overview =="
     putStrLn updates
