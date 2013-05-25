@@ -1,7 +1,7 @@
 ------------------------------------------------------------------------------
 -- |
 -- Module      : hsporter: convert cabal packages to FreeBSD ports
--- Copyright   : (c) Gabor Pali, 2010-2012
+-- Copyright   : (c) Gabor Pali, 2010-2013
 -- License     : BSD3
 --
 -- Maintainer  : FreeBSD Haskell <haskell@FreeBSD.org>
@@ -283,11 +283,6 @@ versionReq (UnionVersionRanges (ThisVersion v1) (LaterVersion v2))
 versionReq (IntersectVersionRanges v _) = versionReq v
 versionReq _ = ("", Version [] [])
 
-cabalSetup :: [String] -> [String]
-cabalSetup ix
-  | any (isSuffixOf "/Setup.lhs") ix  = []
-  | otherwise                         = ["", "CABAL_SETUP=\tSetup.hs"]
-
 useHackage :: [(String,String)] -> [String]
 useHackage []  = []
 useHackage dps =
@@ -321,8 +316,8 @@ executable :: [String] -> [String]
 executable []   = []
 executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
 
-makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> CalendarTime -> [String] -> String
-makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
+makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> CalendarTime -> String
+makefileOf baseLibs lictxt gpkgd category timestamp
   = unlines $
     [ "# $FreeBSD$"
     , ""
@@ -335,7 +330,6 @@ makefileOf baseLibs lictxt gpkgd category timestamp tgzidx
     , ""
     ] ++
     (license (licensingOf pkgd) lictxt) ++
-    (cabalSetup tgzidx) ++
     (useHackage $ dependencies baseLibs gpkgd) ++
     (useAlex $ buildtools gpkgd) ++
     (useHappy $ buildtools gpkgd) ++
@@ -428,7 +422,6 @@ buildPort opts dump (Just category) = do
   let pkg = packageDescription gpkg
   let tgzUrl = tarballOf pkg True
   tarball <- getTarball tgzUrl
-  tgzidx <- return $ tarballIndex tarball
   lic <- return $ licenseText tarball (DP.licenseFile pkg)
   now <- getClockTime
   stamp <- toCalendarTime now
@@ -436,6 +429,6 @@ buildPort opts dump (Just category) = do
     (category </> fullNameOf pkg
     ,Port
       (pkgName $ package pkg)
-      (makefileOf baseLibs lic gpkg category stamp tgzidx)
+      (makefileOf baseLibs lic gpkg category stamp)
       (distinfoOf pkg tarball)
       (pkgDescrOf pkg))
