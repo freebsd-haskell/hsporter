@@ -166,12 +166,7 @@ license (l,lf) lictxt =
     Just lic -> renderLicense lic
     Nothing  -> []
   where
-    renderLicense l =
-      ["LICENSE=\t" ++ l] ++ setFile lf
-      where
-        setFile ""        = []
-        setFile "LICENSE" = []
-        setFile other     = ["FILE_LICENSE=\t" ++ other]
+    renderLicense l = ["LICENSE=\t" ++ l]
 
 prefix :: String
 prefix = "hs-"
