@@ -202,7 +202,7 @@ getPortVersions fn = do
 isThereUpdate :: HDM -> CPM -> VCM -> (PackageName,Category,Version)
   -> HPM (Maybe PortUpdate)
 isThereUpdate hdm cpm vcm (p,ct,v) = do
-  let versions     = filter (>= v) $ hdm %!% p
+  let versions     = hdm %!% p
   let candidates   = (repeat p) `zip` versions
   checked <- mapM (isVersionAllowed hdm cpm vcm) candidates
   let allowed      = versions `zip` checked

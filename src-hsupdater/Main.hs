@@ -229,7 +229,7 @@ cmdGetLatestHackageVersions = runCfg $ do
   dbdir <- asks cfgDbDir
   liftIO $ resetDirectory dbdir
   queue <- fmap catMaybes $ forM ports $ \(p@(PackageName pn),_,v) -> do
-    let available = filter (>= v) $ hdm ! p
+    let available = hdm ! p
     if (not . null $ available)
       then
         return $ Just (PV (p, maximum available))
