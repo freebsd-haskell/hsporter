@@ -366,12 +366,27 @@ distinfoOf pkgd tgz
 
 pkgDescrOf :: PackageDescription -> String
 pkgDescrOf pkgd
-  = unlines $ (format 72 Nothing . words $ contents) ++ ["", www url]
+  = unlines $ (format 72 Nothing . filterLinks $ words $ contents) ++ ["", www url]
     where
       desc = description pkgd
       contents
         | null desc = synopsis pkgd
         | otherwise = desc
+      filterLinks = fixDots . filt
+        where
+          fixDots [] = []
+          fixDots (w:".":ws) = (w ++ ".") : fixDots ws
+          fixDots (w:ws) = w : fixDots ws
+          
+          filt [] = []
+          filt (w:ws) = case w of
+            '<':'h':'t':'t':'p':other -> if last other == '.'
+              then "." : filt ws
+              else filt ws
+            '(':other -> case other of
+              '<':'h':'t':'t':'p':_ -> filt ws
+              _ -> w : filt ws
+            _ -> w : filt ws
 
       PackageName pn = (pkgName . package) pkgd
       hp = homepage pkgd
