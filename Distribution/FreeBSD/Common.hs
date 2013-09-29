@@ -64,4 +64,4 @@ runHPM h c = do
     run = runReaderT . runErrorT . unHPM
 
 hackageURI :: String
-hackageURI = "http://hackage.haskell.org/packages/archive/"
+hackageURI = "http://hackage.haskell.org/package"
