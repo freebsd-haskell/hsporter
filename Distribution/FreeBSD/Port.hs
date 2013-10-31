@@ -96,7 +96,7 @@ tarballOf pkgd withUrl
   where
     url =
       if withUrl
-        then hackageURI ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
+        then hackageURI ++ "/" ++ nameOf pkgd ++ "-" ++ versionOf pkgd ++ "/"
         else ""
 
 tgzEntries :: BS.ByteString -> Entries FormatError
