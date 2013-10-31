@@ -96,7 +96,7 @@ tarballOf pkgd withUrl
   where
     url =
       if withUrl
-        then hackageURI ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
+        then hackageURI ++ "/" ++ nameOf pkgd ++ "-" ++ versionOf pkgd ++ "/"
         else ""
 
 tgzEntries :: BS.ByteString -> Entries FormatError
@@ -332,6 +332,7 @@ makefileOf baseLibs lictxt gpkgd category timestamp
     (executable $ binaries gpkgd) ++
     (standalone gpkgd) ++
     [ ""
+    , "NO_STAGE=\tyes"
     , ".include \"${.CURDIR}/../../lang/ghc/bsd.cabal.mk\""
     , ".include <bsd.port.mk>"
     ]
