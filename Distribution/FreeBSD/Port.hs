@@ -332,6 +332,7 @@ makefileOf baseLibs lictxt gpkgd category timestamp
     (executable $ binaries gpkgd) ++
     (standalone gpkgd) ++
     [ ""
+    , "NO_STAGE=\tyes"
     , ".include \"${.CURDIR}/../../lang/ghc/bsd.cabal.mk\""
     , ".include <bsd.port.mk>"
     ]
