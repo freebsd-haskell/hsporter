@@ -42,13 +42,13 @@ hackageLog,portVersionsFile,bsdHackageMk,mkfile :: FilePath
   ]
 
 hackageLogURI :: String
-hackageLogURI = hackageURI </> "log"
+hackageLogURI = "http://haskell.inf.elte.hu/hackage.log"
 
 cabal :: FilePath -> FilePath
 cabal = (<.> "cabal")
 
 getCabalURI :: (String,String) -> String
-getCabalURI (n,v) = hackageURI </> n </> v </> cabal n
+getCabalURI (n,v) = hackageURI </> (n ++ "-" ++ v) </> cabal n
 
 downloadFile :: String -> IO String
 downloadFile url = simpleHTTP (getRequest url) >>= getResponseBody
@@ -79,9 +79,7 @@ buildHackageDatabase log = do
 
     extractEntry line = (n,v)
       where
-        (n:v:_) = reverseTake 2 . DT.words $ line
-        reverseTake n l = drop ((length l) - n) l
-
+        (n:v:_) = DT.splitOn (DT.pack "/") line
 
 buildCabalDatabase :: HPM CPM
 buildCabalDatabase = do

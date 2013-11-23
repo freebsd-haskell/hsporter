@@ -46,6 +46,13 @@ import System.FilePath.Posix
 import System.IO
 import System.Time
 import Text.ParserCombinators.ReadP
+import Text.Printf
+
+(<</>>) :: Applicative f => f FilePath -> f FilePath -> f FilePath
+(<</>>) = liftA2 combine
+
+(<<.>>) :: Applicative f => f FilePath -> f FilePath -> f FilePath
+(<<.>>) = liftA2 addExtension
 
 withText :: (DT.Text -> DT.Text) -> (String -> String)
 withText f = DT.unpack . f . DT.pack
@@ -90,14 +97,11 @@ getTarball url = do
         , rqHeaders = []
         , rqBody = BS.empty }
 
-tarballOf :: PackageDescription -> Bool -> String
-tarballOf pkgd withUrl
-  = url ++ nameOf pkgd ++ "-" ++ versionOf pkgd ++ ".tar.gz"
-  where
-    url =
-      if withUrl
-        then hackageURI ++ nameOf pkgd ++ "/" ++ versionOf pkgd ++ "/"
-        else ""
+packageOf :: PackageDescription -> String
+packageOf = printf "%s-%s" <$> nameOf <*> versionOf
+
+tarballOf :: PackageDescription -> String
+tarballOf = packageOf <<.>> pure "tar.gz"
 
 tgzEntries :: BS.ByteString -> Entries FormatError
 tgzEntries = Tar.read . GZip.decompress
@@ -361,8 +365,7 @@ distinfoOf pkgd tgz
     [ "SHA256 (cabal/" ++ tgzName ++ ") = " ++ (show $ sha256 tgz)
     , "SIZE (cabal/" ++ tgzName ++ ") = " ++ (show $ BS.length tgz)
     ]
-    where
-      tgzName = tarballOf pkgd False
+    where tgzName = tarballOf pkgd
 
 pkgDescrOf :: PackageDescription -> String
 pkgDescrOf pkgd
@@ -415,8 +418,7 @@ buildPort opts dump (Just category) = do
   baseLibs <- getBaseLibs $ baseLibConf opts
   ParseOk _ gpkg <- return $ parsePackageDescription dump
   let pkg = packageDescription gpkg
-  let tgzUrl = tarballOf pkg True
-  tarball <- getTarball tgzUrl
+  tarball <- getTarball $ hackageURI </> (packageOf <</>> tarballOf) pkg
   lic <- return $ licenseText tarball (DP.licenseFile pkg)
   now <- getClockTime
   stamp <- toCalendarTime now
