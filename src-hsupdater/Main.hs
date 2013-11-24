@@ -320,6 +320,12 @@ allPruneableUpdates = do
       | v < v1 = Just $ PV (p,v)
     toPrune _  = Nothing
 
+pruneableFor :: String -> String -> HPM [PV]
+pruneableFor p v = do
+  cpm <- buildCabalDatabase
+  hdm <- buildHackageDatabase hackageLog
+  map PV <$> satisfyingDependencies hdm cpm (PackageName p, toVersion v)
+
 cmdShowPruneableBy :: HPM [PV] -> IO ()
 cmdShowPruneableBy query = runCfg $ do
   ps <- map show <$> query

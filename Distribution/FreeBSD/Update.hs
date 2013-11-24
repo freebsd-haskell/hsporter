@@ -190,6 +190,19 @@ unsatisfiedDependencies hdm cpm vcm (p,v) = do
     [ (pn,vr)
     | Dependency pn vr <- filter f $ getDependencies $ cpm %!% (p,v) ]
 
+satisfyingDependencies :: HDM -> CPM
+  -> (PackageName,Version) -> HPM [(PackageName,Version)]
+satisfyingDependencies hdm cpm (p,v) = do
+  baselibs <- asks cfgBaseLibs
+  let f (Dependency pk vr) =
+        case (lookup pk baselibs) of
+          Nothing -> Just $ (pk, maximum allowed)
+          _ -> Nothing
+          where allowed = filterAllowed vr pk
+  return $ mapMaybe f $ getDependencies $ cpm %!% (p,v)
+  where
+    filterAllowed vr pk = filter (`withinRange` vr) $ hdm %!% pk
+
 getPortVersions :: FilePath -> HPM Ports
 getPortVersions fn = do
   contents <- (map DT.words . DT.lines . DT.pack) <$> liftIO (readFile fn)
