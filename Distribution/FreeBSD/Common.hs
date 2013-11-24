@@ -39,11 +39,21 @@ data Cfg = Cfg
   , cfgThreads    :: Int
   }
 
-newtype PortUpdate =
-  PU (PackageName,Category,Version,Version,[PackageName],[PackageName])
+data PortUpdate = PU
+  { puPackage       :: PackageName
+  , puCategory      :: Category
+  , puOldVersion    :: Version
+  , puNewVersion    :: Version
+  , puRestrictedBy  :: [PackageName]
+  , puUnsatisfiedBy :: [PackageName]
+  }
 
 instance Show PortUpdate where
-  show (PU (PackageName pn,Category ct,v,v1,_,_)) =
+  show (PU { puPackage    = PackageName pn
+           , puCategory   = Category ct
+           , puOldVersion = v
+           , puNewVersion = v1
+           }) =
     printf "%s (%s) (%s -> %s)" pn ct v' v1'
     where
       [v',v1'] = fmap showVersion [v,v1]

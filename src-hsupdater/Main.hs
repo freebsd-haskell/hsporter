@@ -114,7 +114,12 @@ cache = do
   liftIO $ putStrLn "done."
 
 fetchPort :: PortUpdate -> HPM ()
-fetchPort (PU (p@(PackageName pn),Category ct,v,v1,_,_)) =
+fetchPort
+  (PU { puPackage    = p@(PackageName pn)
+      , puCategory   = Category ct
+      , puOldVersion = v
+      , puNewVersion = v1
+      }) =
   when (v < v1) $ do
     buildopts <- asks cfgBuildOpts
     dbdir <- asks cfgDbDir
@@ -305,29 +310,28 @@ cmdIsVersionAllowed name version = runCfg $ do
   where
     pk = (PackageName name, toVersion version)
 
-collectPruneableUpdates :: HPM [PV]
-collectPruneableUpdates = do
+allPruneableUpdates :: HPM [PV]
+allPruneableUpdates = do
   updates <- initialize >>= learnUpdates
-  return $ map refine . filter toPrune $ updates
+  return $ mapMaybe toPrune updates
   where
-    toPrune (PU (_,_,_,_,[],[]))         = False
-    toPrune (PU (_,_,v,v1,_,_)) | v < v1 = True
-    toPrune _                            = False
+    toPrune (PU { puRestrictedBy = [], puUnsatisfiedBy = [] }) = Nothing
+    toPrune (PU { puPackage = p, puOldVersion = v, puNewVersion = v1 })
+      | v < v1 = Just $ PV (p,v)
+    toPrune _  = Nothing
 
-    refine (PU (p,_,v,_,_,_)) = PV (p,v)
-
-cmdShowPruneableUpdates :: IO ()
-cmdShowPruneableUpdates = runCfg $ do
-  ps <- liftM (map show) $ collectPruneableUpdates
+cmdShowPruneableBy :: HPM [PV] -> IO ()
+cmdShowPruneableBy query = runCfg $ do
+  ps <- map show <$> query
   liftIO . putStrLn $
     if (null ps)
       then "There are no pruneable updates."
       else unlines ps
 
-cmdPruneUpdates :: IO ()
-cmdPruneUpdates = do
+cmdPruneBy :: HPM [PV] -> IO ()
+cmdPruneBy query = do
   putStrLn "Initializing..."
-  runCfg $ collectPruneableUpdates >>= parallel "Pruned: %s" fetchCabal
+  runCfg $ query >>= parallel "Pruned: %s" fetchCabal
 
 body :: HPM ()
 body = do

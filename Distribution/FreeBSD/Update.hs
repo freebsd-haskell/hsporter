@@ -208,7 +208,14 @@ isThereUpdate hdm cpm vcm (p,ct,v) = do
   let (v',(r',d')) = minimumBy (compare `on` f) allowed
   return $
     if (v /= v')
-      then Just $ PU (p,ct,v,v', map (fst . fst) r', map fst d')
+      then Just $ PU
+        { puPackage       = p
+        , puCategory      = ct
+        , puOldVersion    = v
+        , puNewVersion    = v'
+        , puRestrictedBy  = map (fst . fst) r'
+        , puUnsatisfiedBy = map fst d'
+        }
       else Nothing
 
 learnUpdates :: (HDM,CPM,VCM,Ports) -> HPM [PortUpdate]
@@ -216,7 +223,14 @@ learnUpdates (hdm,cpm,vcm,Ports ports) =
   fmap catMaybes $ mapM (isThereUpdate hdm cpm vcm) ports
 
 prettyUpdateLine :: PortUpdate -> Maybe String
-prettyUpdateLine (PU (PackageName p,Category c,v,v1,rs,dp))
+prettyUpdateLine
+  (PU { puPackage       = PackageName p
+      , puCategory      = Category c
+      , puOldVersion    = v
+      , puNewVersion    = v1
+      , puRestrictedBy  = rs
+      , puUnsatisfiedBy = dp
+      })
   | v < v1 && null rs && null dp = Just $
     printf "%-32s %-12s ---> %-12s" port v' v1'
   | v < v1 && null rs = Just $
@@ -233,7 +247,12 @@ prettyUpdateLine (PU (PackageName p,Category c,v,v1,rs,dp))
     udeps     = intercalate ", " [ d | PackageName d <- dp ]
 
 compactUpdateLine :: PortUpdate -> Maybe String
-compactUpdateLine (PU (PackageName p,Category c,v,v1,rs,dp)) =
+compactUpdateLine
+  (PU { puPackage    = PackageName p
+      , puCategory   = Category c
+      , puOldVersion = v
+      , puNewVersion = v1
+      }) =
   Just $ printf "%s/hs-%s: %s --> %s" c p (showVersion v) (showVersion v1)
 
 initialize :: HPM (HDM,CPM,VCM,Ports)
