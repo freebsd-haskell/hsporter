@@ -15,22 +15,24 @@
 
     where
       cabal_description_url = valid URL of a Cabal package (probably on HackageDB)
-      category = FreeBSD port category
+      category = FreeBSD port category (optional)
 
 ### Example
 
 Issue the following command.
 
-      hsporter http://hackage.haskell.org/packages/archive/DeepArrow/0.3.3/DeepArrow.cabal
+      hsporter http://hackage.haskell.org/package/DeepArrow-0.4.0/DeepArrow.cabal
 
-It will create all the files needed for a port inside the directory `devel/hs-DeepArrow`.
+It will create all the files needed for a port inside the directory
+`devel/hs-DeepArrow`.
 
 
 # Disclaimer
 
-Please, do not forget to test and use the ports before doing anything with it in public.
-Note that it is very experimental and under development.  Slippery when wet.
+Please, do not forget to test and use the ports before doing anything
+with it in public.  Note that it is very experimental and under
+development.  Slippery when wet.
 
 # Contact
 
-FreeBSD Haskell People <haskell@FreeBSD.org>
+FreeBSD Haskell People at <haskell@FreeBSD.org>
