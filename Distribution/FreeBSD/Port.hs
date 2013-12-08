@@ -315,8 +315,8 @@ executable :: [String] -> [String]
 executable []   = []
 executable exs  = ["", "EXECUTABLE=\t" ++ (unwords exs)]
 
-makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> CalendarTime -> String
-makefileOf baseLibs lictxt gpkgd category timestamp
+makefileOf :: [(String,[Int])] -> String -> GenericPackageDescription -> String -> String
+makefileOf baseLibs lictxt gpkgd category
   = unlines $
     [ "# $FreeBSD$"
     , ""
@@ -341,11 +341,6 @@ makefileOf baseLibs lictxt gpkgd category timestamp
     ]
   where
     pkgd = packageDescription gpkgd
-
-    fmt ts =
-      (show $ ctMonth ts) ++ " " ++
-      (show $ ctDay ts) ++ ", " ++
-      (show $ ctYear ts)
 
     buildtools gpkgd =
       concatMap buildTools $ concat [libTools,exeTools]
@@ -420,12 +415,10 @@ buildPort opts dump (Just category) = do
   let pkg = packageDescription gpkg
   tarball <- getTarball $ hackageURI </> (packageOf <</>> tarballOf) pkg
   lic <- return $ licenseText tarball (DP.licenseFile pkg)
-  now <- getClockTime
-  stamp <- toCalendarTime now
   return $
     (category </> fullNameOf pkg
     ,Port
       (pkgName $ package pkg)
-      (makefileOf baseLibs lic gpkg category stamp)
+      (makefileOf baseLibs lic gpkg category)
       (distinfoOf pkg tarball)
       (pkgDescrOf pkg))
