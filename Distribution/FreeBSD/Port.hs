@@ -150,8 +150,8 @@ categories c = "CATEGORIES=\t" ++ cats
 findLicense :: License -> Maybe String
 findLicense (GPL _)  = Just "GPLv"
 findLicense (LGPL _) = Just "LGPL21"
-findLicense BSD3     = Just "BSD"
-findLicense BSD4     = Just "BSD"
+findLicense BSD3     = Just "BSD3CLAUSE"
+findLicense BSD4     = Just "BSD4CLAUSE"
 findLicense MIT      = Just "MIT"
 findLicense _        = Nothing
 
