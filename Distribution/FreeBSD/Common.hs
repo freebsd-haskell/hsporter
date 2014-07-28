@@ -75,3 +75,9 @@ runHPM h c = do
 
 hackageURI :: String
 hackageURI = "http://hackage.haskell.org/package/"
+
+(%!%) :: (Show k, Ord k) => DM.Map k a -> k -> a
+m %!% k =
+  case (DM.lookup k m) of
+    Just v  -> v
+    Nothing -> error $ "No value for key \"" ++ show k ++ "\"."

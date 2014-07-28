@@ -8,7 +8,6 @@ import Control.Monad.Error
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Data.Map as DM
-import Data.Map ((!))
 import Data.Maybe
 import qualified Data.Text as DT
 import Data.Version
@@ -36,9 +35,9 @@ getConfiguration path = do
   let platform = Platform $ ghcLibs ++ platLibs
   let baselibs = Distribution.FreeBSD.Update.getBaseLibs platform
   return $
-    Cfg (m ! "dbdir") (m ! "portsdir") (m ! "updatesdir")
+    Cfg (m %!% "dbdir") (m %!% "portsdir") (m %!% "updatesdir")
         platform (BuildOpts ghcConf catsConf) baselibs
-        (read $ m ! "threads")
+        (read $ m %!% "threads")
   where
     formatLine line =
       case (DT.strip <$> DT.splitOn (DT.pack "=") line) of
@@ -72,7 +71,7 @@ downloadCabalFiles (Ports ports) hdm = do
   dbdir <- asks cfgDbDir
   liftIO $ resetDirectory dbdir
   forM_ ports $ \(p,_,v) -> do
-    forM_ (filter (>= v) $ hdm ! p) $ \v ->
+    forM_ (filter (>= v) $ hdm %!% p) $ \v ->
       fetchCabalFile (PV (p,v))
 
 cachePortVersions :: HPM ()
@@ -80,13 +79,18 @@ cachePortVersions = do
   portsDir <- asks cfgPortsDir
   let mk = portsDir </> bsdHackageMk
   contents <- liftIO $ (normalize . DT.lines . DT.pack) <$> readFile mk
-  versions <- forM (map (DT.unpack . (!! 1) . DT.words) contents) $ \d -> do
-    port <- liftIO $ readFile $ portsDir </> d </> mkfile
-    let cat = takeDirectory d
-    let k = filter (not . null) . map words . lines $ port
-    let pnLine = head $ filter ((== "PORTNAME=") . head) k
-    let pvLine = head $ filter ((== "PORTVERSION=") . head) k
-    return $ unwords [pnLine !! 1, cat, pvLine !! 1]
+  versions <- fmap catMaybes $
+    forM (map (DT.unpack . (!! 1) . DT.words) contents) $ \d -> do
+      port <- liftIO $ readFile $ portsDir </> d </> mkfile
+      let cat = takeDirectory d
+      let k = filter (not . null) . map words . lines $ port
+      let pnLine = head $ filter ((== "PORTNAME=") . head) k
+      let pvLine = head $ filter ((== "PORTVERSION=") . head) k
+      let metaport = not . null $ filter ((== "METAPORT=") . head) k
+      return $
+        if (not metaport)
+          then Just $ unwords [pnLine !! 1, cat, pvLine !! 1]
+          else Nothing
   liftIO $ writeFile portVersionsFile $ unlines versions
 
 cacheHackageDB :: IO ()
@@ -234,13 +238,13 @@ cmdGetLatestHackageVersions = runCfg $ do
   dbdir <- asks cfgDbDir
   liftIO $ resetDirectory dbdir
   queue <- fmap catMaybes $ forM ports $ \(p@(PackageName pn),_,v) -> do
-    let available = hdm ! p
+    let available = hdm %!% p
     if (not . null $ available)
       then
         return $ Just (PV (p, maximum available))
       else liftIO $ do
         putStrLn $ "Cannot be got: " ++ pn ++ ", " ++ showVersion v
-        putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm ! p))
+        putStrLn $ "hdm: " ++ intercalate ", " (map showVersion (hdm %!% p))
         return Nothing
   liftIO $ putStrLn "Fetching new versions..."
   parallel "Fetched: %s" fetchCabalFile' queue
@@ -285,13 +289,13 @@ cmdFetchCabal n v = do
 cmdFetchLatestCabal :: String -> IO ()
 cmdFetchLatestCabal n = runCfg $ do
   hdm <- buildHackageDatabase hackageLog
-  let latest = last $ hdm ! (PackageName n)
+  let latest = last $ hdm %!% (PackageName n)
   liftIO $ cmdFetchCabal n (showVersion latest)
 
 cmdPrintCabalVersions :: String -> IO ()
 cmdPrintCabalVersions name = runCfg $ do
   hdm <- buildHackageDatabase hackageLog
-  let versions = intercalate ", " $ showVersion <$> hdm ! (PackageName name)
+  let versions = intercalate ", " $ showVersion <$> hdm %!% (PackageName name)
   liftIO $ putStrLn versions
 
 cmdIsVersionAllowed :: String -> String -> IO ()

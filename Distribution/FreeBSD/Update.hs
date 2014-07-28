@@ -24,12 +24,6 @@ import Text.ParserCombinators.ReadP
 import Text.Printf
 import Debug.Trace
 
-(%!%) :: (Show k, Ord k) => DM.Map k a -> k -> a
-m %!% k =
-  case (DM.lookup k m) of
-    Just v  -> v
-    Nothing -> error $ "No value for key \"" ++ show k ++ "\"."
-
 toVersion :: String -> Version
 toVersion = fst . last . readP_to_S parseVersion
 
