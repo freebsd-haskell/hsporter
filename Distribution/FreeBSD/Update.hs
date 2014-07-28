@@ -184,7 +184,7 @@ unsatisfiedDependencies hdm cpm vcm (p,v) = do
   baselibs <- asks cfgBaseLibs
   let f (Dependency pk vr) =
         case (lookup pk baselibs) of
-          Just _  -> False
+          Just v  -> not $ v `withinRange` vr
           Nothing -> not $ all ((`withinRange` vr)) $ hdm %!% pk
   return
     [ (pn,vr)
