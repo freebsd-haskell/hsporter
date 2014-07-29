@@ -183,6 +183,10 @@ normalize = filter nonEmpty . map (trim . uncomment)
     trim = f . f
       where f = reverse . dropWhile isSpace
 
+capitalize :: String -> String
+capitalize (c:cs) | isLower c = (toUpper c):cs
+capitalize cs = cs
+
 getBaseLibs :: FilePath -> IO [(String,[Int])]
 getBaseLibs coreConf = do
   contents <- lines <$> readFile coreConf
@@ -368,7 +372,7 @@ distinfoOf pkgd tgz
 
 pkgDescrOf :: PackageDescription -> String
 pkgDescrOf pkgd
-  = unlines $ (format 72 Nothing . words $ contents) ++ ["", www url]
+  = unlines $ (format 72 Nothing . words $ prettify contents) ++ ["", www url]
     where
       desc = description pkgd
       contents
@@ -380,6 +384,12 @@ pkgDescrOf pkgd
       url
         | hp == ""  = "http://hackage.haskell.org/package/" ++ pn
         | otherwise = hp
+
+      prettify = terminate . capitalize
+
+      terminate s
+        | last s /= '.' = s ++ "."
+        | otherwise = s
 
 nameOf :: PackageDescription -> String
 nameOf pkgd = name
@@ -393,7 +403,17 @@ versionOf pkgd = verstr
     verstr  = showVersion version
 
 synopsisOf :: PackageDescription -> String
-synopsisOf pkgd = synopsis pkgd
+synopsisOf = prettify . synopsis
+  where
+    prettify =
+      words                   >>>
+      removeIndefiniteArticle >>>
+      unwords                 >>>
+      capitalize
+
+    removeIndefiniteArticle (w:ws)
+      | (toUpper <$> w) `elem` ["A", "AN"] = ws
+    removeIndefiniteArticle ws = ws
 
 licensingOf :: PackageDescription -> (License,FilePath)
 licensingOf = DP.license &&& DP.licenseFile
