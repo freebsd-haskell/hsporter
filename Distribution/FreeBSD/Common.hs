@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Distribution.FreeBSD.Common where
 
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Error
 import qualified Data.Map as DM
@@ -62,7 +63,7 @@ instance Show PortUpdate where
 newtype HPM a = HPM {
     unHPM :: ErrorT String (ReaderT Cfg IO) a
   }
-  deriving (Functor,Monad,MonadIO,MonadReader Cfg)
+  deriving (Functor,Applicative,Monad,MonadIO,MonadReader Cfg)
 
 runHPM :: HPM a -> Cfg -> IO ()
 runHPM h c = do
