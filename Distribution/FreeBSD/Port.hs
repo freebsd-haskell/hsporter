@@ -228,10 +228,12 @@ dependencies baseLibs gpkgd =
   nub .
   sortBy (compare `on` (map toUpper . fst)) .
   map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
-  filter (not . baselib) .
+  filter ((&&) <$> (not . baselib) <*> (not . self)) .
   map convert $
   collectDeps
   where
+    pkgd = packageDescription gpkgd
+
     convert (Dependency (PackageName p) vr) = (p, versionReq vr)
 
     baselib (p,(o,v)) = any (\(bp,bv) -> bp == p && (op o) bv vb) baseLibs
@@ -241,6 +243,8 @@ dependencies baseLibs gpkgd =
         op ">=" = (>=)
         op ">"  = (>)
         op _    = (\_ _ -> True)
+
+    self (p,_) = (nameOf pkgd == p)
 
     collectDeps = concat [libdeps,exedeps]
       where
