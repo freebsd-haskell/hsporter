@@ -45,7 +45,8 @@ library
 
 executable hsporter
   main-is: src-hsporter/Main.hs
-
+  extensions: CPP
+  cpp-options: -DSTANDALONE
   build-depends:
     directory == 1.2.*
 

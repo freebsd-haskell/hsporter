@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Main where
 
 import Control.Monad
@@ -11,7 +12,9 @@ import System.Environment
 import System.Exit
 import System.FilePath.Posix
 import Text.Printf
+#ifdef STANDALONE
 import Paths_hsporter
+#endif
 
 printUsage :: IO ()
 printUsage = do
@@ -25,8 +28,12 @@ die str = do
 
 main :: IO ()
 main = do
+#ifdef STANDALONE
   ghcConf <- getDataFileName "ghc.conf"
   catsConf <- getDataFileName "categories.conf"
+#else
+  let [ghcConf,catsConf] = ["ghc.conf", "categories.conf"]
+#endif
   let opts = BuildOpts ghcConf catsConf
   args <- getArgs
   when (length args < 1) printUsage
