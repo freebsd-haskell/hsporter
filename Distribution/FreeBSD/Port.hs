@@ -238,12 +238,11 @@ active _ _                  = True
 
 dependencies :: [(String,[Int])] -> GenericPackageDescription -> [(String,String)]
 dependencies baseLibs gpkgd =
-  nub .
-  sortBy (compare `on` (map toUpper . fst)) .
-  map (\(p,(op,v)) -> (p, op ++ showVersion v)) .
+  map expandDependency .
+  removeRedundancies .
   filter ((&&) <$> (not . baselib) <*> (not . self)) .
   map convert $
-  collectDeps
+  collectDependencies
   where
     pkgd = packageDescription gpkgd
 
@@ -259,7 +258,7 @@ dependencies baseLibs gpkgd =
 
     self (p,_) = (nameOf pkgd == p)
 
-    collectDeps = concat [libdeps,exedeps]
+    collectDependencies = concat [libdeps,exedeps]
       where
         libdeps   =
           case (condLibrary gpkgd) of
@@ -267,13 +266,23 @@ dependencies baseLibs gpkgd =
             Nothing -> []
         exedeps   = concatMap (findDeps . snd) . condExecutables $ gpkgd
 
-    findDeps = uncurry (++) .
-      ((condTreeConstraints) &&&
-      (concatMap condTreeConstraints . catMaybes . map pick . condTreeComponents))
+    findDeps = (++) <$>
+      condTreeConstraints <*>
+      (concatMap condTreeConstraints . catMaybes . map pick . condTreeComponents)
 
     pick (opt,pri,sec)
       | active gpkgd opt  = Just pri
       | otherwise         = sec
+
+    removeRedundancies =
+      sortBy (compare `on` name)             >>>
+      groupBy ((==) `on` name)               >>>
+      map (maximumBy (compare `on` version))
+      where
+        name (n,_)     = toUpper <$> n
+        version (_,vr) = vr
+
+    expandDependency (p,(op,v)) = (p, op ++ showVersion v)
 
 sand :: [Bool] -> Bool
 sand [] = False
