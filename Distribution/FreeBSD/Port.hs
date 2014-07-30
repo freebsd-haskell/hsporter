@@ -80,10 +80,19 @@ format w t =
 fullNameOf :: PackageDescription -> String
 fullNameOf pkgd = prefix ++ nameOf pkgd
 
-getDescription :: String -> IO String
-getDescription url = do
+getDescriptionFromURL :: String -> IO (Maybe GenericPackageDescription)
+getDescriptionFromURL url = do
   rsp <- simpleHTTP $ getRequest url
-  getResponseBody rsp
+  getDescriptionFromString `fmap` getResponseBody rsp
+
+getDescriptionFromFile :: FilePath -> IO (Maybe GenericPackageDescription)
+getDescriptionFromFile path = getDescriptionFromString `fmap` readFile path
+
+getDescriptionFromString :: String -> Maybe GenericPackageDescription
+getDescriptionFromString raw =
+  case (parsePackageDescription raw) of
+    ParseOk _ gpkg -> Just gpkg
+    _              -> Nothing
 
 getTarball :: String -> IO BS.ByteString
 getTarball url = do
@@ -425,17 +434,15 @@ data Port = Port {
   , pkgDescr :: String
   }
 
-buildPort :: BuildOpts -> String -> Maybe String -> IO (FilePath,Port)
-buildPort opts dump Nothing = do
+buildPort :: BuildOpts -> GenericPackageDescription -> Maybe String -> IO (FilePath,Port)
+buildPort opts gpkg Nothing = do
   catMap <- getCategoryMap $ categoriesConf opts
-  ParseOk _ gpkg <- return $ parsePackageDescription dump
   let pkg = packageDescription gpkg
   let category = findCategory catMap (DP.category pkg)
-  buildPort opts dump (Just category)
+  buildPort opts gpkg (Just category)
 
-buildPort opts dump (Just category) = do
+buildPort opts gpkg (Just category) = do
   baseLibs <- getBaseLibs $ baseLibConf opts
-  ParseOk _ gpkg <- return $ parsePackageDescription dump
   let pkg = packageDescription gpkg
   tarball <- getTarball $ hackageURI </> (packageOf <</>> tarballOf) pkg
   lic <- return $ licenseText tarball (DP.licenseFile pkg)

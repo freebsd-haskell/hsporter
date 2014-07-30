@@ -129,8 +129,8 @@ fetchPort
     dbdir <- asks cfgDbDir
     updatesDir <- asks cfgUpdatesDir
     liftIO $ do
-      dump <- readFile $ dbdir </> cabal (show $ PV (p,v1))
-      (ppath,port) <- buildPort buildopts dump (Just ct)
+      Just gpkg <- getDescriptionFromFile $ dbdir </> cabal (show $ PV (p,v1))
+      (ppath,port) <- buildPort buildopts gpkg (Just ct)
       createPortFiles (updatesDir </> ppath) port
 
 downloadUpdates :: HPM ()
