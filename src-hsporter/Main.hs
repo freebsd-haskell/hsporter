@@ -2,6 +2,7 @@
 module Main where
 
 import Control.Monad
+import Data.List
 import Data.Maybe
 import Distribution.FreeBSD.Common
 import Distribution.FreeBSD.Port
@@ -59,11 +60,23 @@ main = do
   writeFile (dir </> "pkg-descr") (pkgDescr port)
   putStr $ sep "pkg-descr"
   putStrLn $ " ]"
+  let exe = not . null $ binaries gpkgd
+  let ldp = False
   let PackageName n = name port
+  let hackageLine | exe || ldp = printf "%-48s %-48s # %s" portStr dir notes
+                  | otherwise  = printf "%-48s %s" portStr dir
+                  where
+                    portStr = printf "%s_port=" n :: String
+                    notes   = intercalate ", " $ catMaybes
+                      [ exe `as` "executable", ldp `as` "lib_depends" ]
   putStrLn $ unlines
     [ "Do not forget to do a 'portlint -C'"
     , ""
     , "The corresponding bsd.hackage.mk line is as follows:"
-    , printf "%-32s %s" (printf "%s_port=" n :: String) dir
+    , hackageLine
     ]
-  where sep str = " " ++ str
+  where
+    sep str = " " ++ str
+
+    b `as` s | b = Just s
+    _ `as` _     = Nothing
